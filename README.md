@@ -99,12 +99,20 @@ shared repository.
 6. Invite the bot to your channel: `/invite @Claude Code Reviewer`
 7. Copy the **Channel ID** from the channel's details (starts with `C`)
 
-### 3. Create a Bitbucket App Password
+### 3. Create a Bitbucket API Token
 
-1. Bitbucket → Your avatar → **Personal settings** → **App passwords**
-2. Click **Create app password**, label it `Claude CI Reviewer`
-3. Permissions: `Repositories: Read`, `Pull requests: Read` + `Write`
-4. Copy the generated password
+App passwords were deprecated on September 9, 2025 and will stop working on June 9, 2026.
+Use an API token instead.
+
+1. Bitbucket → Your avatar → **Account settings** → (Atlassian account page) **Security** tab
+2. Click **Create and manage API tokens** → **Create API token with scopes**
+3. Label it `Claude CI Reviewer`, set an expiration date, select **Bitbucket**
+4. Add scope: `write:pullrequest:bitbucket` (this includes read access)
+5. Click **Create token** and copy it immediately — it is shown only once
+   The token starts with the prefix `ATAT`
+
+> **Rotation reminder:** API tokens expire. Set a calendar reminder before the expiry
+> date to rotate the token and update the `BITBUCKET_TOKEN` repository variable.
 
 ### 4. Set Repository Variables
 
@@ -115,8 +123,8 @@ In Bitbucket: **Repository settings** → **Repository variables**
 | `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes |
 | `SLACK_BOT_TOKEN` | `xoxb-...` from step 2 | ✅ Yes |
 | `SLACK_CHANNEL_ID` | Channel ID from step 2 | No |
-| `BITBUCKET_TOKEN` | App password from step 3 | ✅ Yes |
-| `BITBUCKET_USERNAME` | Your Bitbucket username | No |
+| `BITBUCKET_TOKEN` | API token from step 3 (starts with `ATAT`) | ✅ Yes |
+| `BITBUCKET_USERNAME` | Your Atlassian **account email address** | No |
 
 ---
 

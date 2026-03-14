@@ -5,7 +5,8 @@
 # Usage: bash scripts/post-pr-comment.sh "<review text>"
 #
 # Required env vars (inherited from ci-review.sh):
-#   BITBUCKET_USERNAME, BITBUCKET_TOKEN,
+#   BITBUCKET_USERNAME  — Atlassian account email address
+#   BITBUCKET_TOKEN     — API token (starts with ATAT), scope: write:pullrequest:bitbucket
 #   BITBUCKET_REPO_FULL_NAME, BITBUCKET_PR_ID
 # =============================================================================
 set -euo pipefail

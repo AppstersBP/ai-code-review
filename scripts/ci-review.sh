@@ -8,9 +8,9 @@
 #   ANTHROPIC_API_KEY       Your Anthropic API key (mark as secured)
 #   SLACK_BOT_TOKEN         Slack bot OAuth token (xoxb-...) (mark as secured)
 #   SLACK_CHANNEL_ID        ID of the private Slack channel (e.g. C01234ABCDE)
-#   BITBUCKET_TOKEN         Bitbucket App Password with pullrequest:write scope
-#                           (mark as secured)
-#   BITBUCKET_USERNAME      Bitbucket account username for API auth
+#   BITBUCKET_TOKEN         Bitbucket API token (starts with ATAT) with scope
+#                           write:pullrequest:bitbucket (mark as secured)
+#   BITBUCKET_USERNAME      Atlassian account email address for API auth
 #
 # =============================================================================
 set -euo pipefail
