@@ -88,13 +88,18 @@ else
   else
     if [ -n "${BITBUCKET_PREVIOUS_COMMIT:-}" ]; then
       warn "BITBUCKET_PREVIOUS_COMMIT (${BITBUCKET_PREVIOUS_COMMIT:0:8}) not found in local history — falling back to merge-base"
+    else
+      log "No BITBUCKET_PREVIOUS_COMMIT set — finding merge-base with default branch"
     fi
-    git fetch origin master --depth=50 2>/dev/null || \
-      git fetch origin main --depth=50 2>/dev/null || true
+    # Bitbucket clones with --depth 50.  Deepen the current clone and fetch the
+    # default branch so the branch point is reachable for merge-base.
+    git fetch --deepen=50 2>/dev/null || true
+    git fetch origin master --depth=100 2>/dev/null || \
+      git fetch origin main --depth=100 2>/dev/null || true
     BASE_SHA=$(git merge-base HEAD origin/master 2>/dev/null \
       || git merge-base HEAD origin/main 2>/dev/null) \
-      || { warn "git merge-base failed — falling back to HEAD~1"; BASE_SHA=$(git rev-parse HEAD~1); }
-    log "Merge-base fallback resolved to: ${BASE_SHA:0:8}"
+      || { warn "git merge-base failed even after deepening — reviewing last commit only"; BASE_SHA=$(git rev-parse HEAD~1); }
+    log "Merge-base with default branch: ${BASE_SHA:0:8}"
   fi
 fi
 
