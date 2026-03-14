@@ -226,6 +226,9 @@ fi
 
 REVIEW=$(cat review-output.txt)
 log "Review complete. $(wc -l < review-output.txt) lines of output."
+echo "─────────────────────────────────────────────────────────"
+echo "${REVIEW}"
+echo "─────────────────────────────────────────────────────────"
 
 # ─── 9. Detect Critical issues and set exit code ─────────────────────────────
 if echo "$REVIEW" | grep -q "### 🔴 Critical"; then
