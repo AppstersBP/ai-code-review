@@ -168,13 +168,26 @@ claude -p "${PROMPT}" \
   --allowedTools "Bash(git *)" "Read" "Grep" "Glob" \
   --dangerously-skip-permissions \
   --max-turns 30 \
-  --output-format text \
-  > review-output.txt 2>review-stderr.txt || true
+  --output-format json \
+  > review-raw.json 2>review-stderr.txt || true
 
-if [ ! -s review-output.txt ]; then
+# ─── Extract review text and log usage stats ─────────────────────────────────
+if [ ! -s review-raw.json ]; then
   warn "Claude produced no output — check review-stderr.txt"
   cat review-stderr.txt >&2 || true
   echo "❌ Code review failed to produce output. Check CI logs." > review-output.txt
+else
+  jq -r '.result // "❌ Code review failed to produce output. Check CI logs."' \
+    review-raw.json > review-output.txt
+
+  INPUT_TOKENS=$(jq -r '.usage.input_tokens          // 0' review-raw.json)
+  OUTPUT_TOKENS=$(jq -r '.usage.output_tokens         // 0' review-raw.json)
+  CACHE_READ=$(jq -r  '.usage.cache_read_input_tokens // 0' review-raw.json)
+  CACHE_WRITE=$(jq -r '.usage.cache_creation_input_tokens // 0' review-raw.json)
+  COST=$(jq -r        '.total_cost_usd                // 0' review-raw.json)
+
+  log "Token usage — input: ${INPUT_TOKENS} | cache_read: ${CACHE_READ} | cache_write: ${CACHE_WRITE} | output: ${OUTPUT_TOKENS}"
+  log "Estimated cost: \$$(printf '%.4f' "${COST}")"
 fi
 
 REVIEW=$(cat review-output.txt)
