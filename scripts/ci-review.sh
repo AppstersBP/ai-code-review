@@ -49,6 +49,12 @@ export PATH="$HOME/.local/bin:$PATH"
 # Verify installation
 claude --version || fail "Claude Code installation failed"
 
+# --dangerously-skip-permissions is blocked when running as root.
+# Create a non-root user and make claude available to it.
+useradd -m -s /bin/bash reviewer 2>/dev/null || true
+cp "$HOME/.local/bin/claude" /usr/local/bin/claude
+log "Non-root reviewer user ready."
+
 # ─── 3. Detect pipeline context ──────────────────────────────────────────────
 IS_PR=false
 if [ -n "${BITBUCKET_PR_ID:-}" ]; then
@@ -164,12 +170,37 @@ SKILL INSTRUCTIONS (follow exactly):
 
 ${SKILL}"
 
-claude -p "${PROMPT}" \
-  --allowedTools "Bash(git *)" "Read" "Grep" "Glob" \
+# Write prompt and API key to temp files for the non-root runner
+PROMPT_FILE=$(mktemp /tmp/prompt.XXXXXX)
+printf '%s' "$PROMPT" > "$PROMPT_FILE"
+
+APIKEY_FILE=$(mktemp /tmp/.apikey.XXXXXX)
+printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > "$APIKEY_FILE"
+chmod 600 "$APIKEY_FILE"
+chown reviewer "$APIKEY_FILE" "$PROMPT_FILE"
+
+# Runner script executed as the non-root reviewer user.
+# git requires safe.directory when the repo is owned by a different user.
+BUILD_DIR="$(pwd)"
+RUNNER=$(mktemp /tmp/runner.XXXXXX.sh)
+cat > "$RUNNER" << 'RUNNER_EOF'
+#!/bin/bash
+set -a; source "$1"; set +a
+export HOME=/home/reviewer
+git config --global --add safe.directory "$2" 2>/dev/null || true
+claude -p "$(cat "$3")" \
+  --allowedTools 'Bash(git *)' 'Read' 'Grep' 'Glob' \
   --dangerously-skip-permissions \
   --max-turns 30 \
-  --output-format json \
+  --output-format json
+RUNNER_EOF
+chmod 755 "$RUNNER"
+chown reviewer "$RUNNER"
+
+su -s /bin/bash reviewer -c "$RUNNER $APIKEY_FILE $BUILD_DIR $PROMPT_FILE" \
   > review-raw.json 2>review-stderr.txt || true
+
+rm -f "$RUNNER" "$PROMPT_FILE" "$APIKEY_FILE"
 
 # ─── Extract review text and log usage stats ─────────────────────────────────
 if [ ! -s review-raw.json ]; then
