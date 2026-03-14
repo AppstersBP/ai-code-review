@@ -18,6 +18,8 @@ set -euo pipefail
 # ─── Script location (skills are resolved relative to this script) ───────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL_DIR="${SCRIPT_DIR}/../skills"
+# shellcheck source=scripts/parse-review.sh
+source "${SCRIPT_DIR}/parse-review.sh"
 
 # ─── Colour helpers (only when running locally with a TTY) ───────────────────
 if [ -t 1 ]; then
@@ -231,14 +233,10 @@ echo "${REVIEW}"
 echo "─────────────────────────────────────────────────────────"
 
 # ─── 9. Detect Critical issues and set exit code ─────────────────────────────
-if echo "$REVIEW" | grep -q "### 🔴 Critical"; then
-  CRITICAL_SECTION=$(echo "$REVIEW" | \
-    awk '/### 🔴 Critical/,/### 🟡/' | grep -v "^###" | grep -v "^---" | grep -v "^$" || true)
-  if echo "$CRITICAL_SECTION" | grep -qv "None\."; then
-    warn "Critical issues found — pipeline will fail after notifications are sent"
-    REVIEW_EXIT=1
-    FAIL_REASON="Review found Critical issues"
-  fi
+if has_critical_findings "$REVIEW"; then
+  warn "Critical issues found — pipeline will fail after notifications are sent"
+  REVIEW_EXIT=1
+  FAIL_REASON="Review found Critical issues"
 fi
 echo "$REVIEW_EXIT" > review-exit-code.txt
 

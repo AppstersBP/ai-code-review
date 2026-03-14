@@ -20,6 +20,10 @@
 # =============================================================================
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/parse-review.sh
+source "${SCRIPT_DIR}/parse-review.sh"
+
 REVIEW="${1:-No review output.}"
 IS_PR="${2:-false}"
 AUTHOR_NAME="${3:-Unknown}"
@@ -34,18 +38,10 @@ if [ "$REVIEW_EXIT" -eq 1 ]; then
   STATUS_EMOJI="🔴"
   STATUS_TEXT="Critical issues found — build failed"
   COLOUR="danger"
-elif echo "$REVIEW" | grep -q "### 🟡 Important"; then
-  IMPORTANT_SECTION=$(echo "$REVIEW" | \
-    awk '/### 🟡 Important/,/### 🟢/' | grep -v "^###" | grep -v "^$" || true)
-  if echo "$IMPORTANT_SECTION" | grep -qv "None\."; then
+elif has_important_findings "$REVIEW"; then
     STATUS_EMOJI="🟡"
     STATUS_TEXT="Important issues found"
     COLOUR="warning"
-  else
-    STATUS_EMOJI="✅"
-    STATUS_TEXT="Approved"
-    COLOUR="good"
-  fi
 else
   STATUS_EMOJI="✅"
   STATUS_TEXT="Approved"
