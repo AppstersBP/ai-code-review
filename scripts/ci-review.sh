@@ -70,6 +70,15 @@ fi
 log "Resolving commit range..."
 log "BITBUCKET_PREVIOUS_COMMIT=${BITBUCKET_PREVIOUS_COMMIT:-<not set>}"
 
+# Bitbucket rewrites the remote URL to a plain http:// address, but its
+# authentication proxy is only configured for BITBUCKET_GIT_HTTP_ORIGIN
+# (https://...).  Reset the remote so subsequent fetches go through the
+# authenticated proxy and succeed.
+if [ -n "${BITBUCKET_GIT_HTTP_ORIGIN:-}" ]; then
+  git remote set-url origin "$BITBUCKET_GIT_HTTP_ORIGIN" 2>/dev/null || true
+  log "Remote URL set to BITBUCKET_GIT_HTTP_ORIGIN for authenticated fetches"
+fi
+
 if [ "$IS_PR" = true ]; then
   git fetch origin "${BITBUCKET_PR_DESTINATION_BRANCH}" --depth=50 2>/dev/null || true
   BASE_SHA=$(git merge-base HEAD "origin/${BITBUCKET_PR_DESTINATION_BRANCH}" 2>/dev/null) \
@@ -78,18 +87,36 @@ if [ "$IS_PR" = true ]; then
 else
   HEAD_SHA=$(git rev-parse HEAD)
   # BITBUCKET_PREVIOUS_COMMIT = HEAD SHA from the last successful pipeline run.
-  # When prior builds failed (e.g. permissions error on first run), Bitbucket may
-  # set BITBUCKET_PREVIOUS_COMMIT to a SHA that is itself part of the current push,
-  # causing that commit to be excluded from the review range.  Log it and verify.
+  # Bitbucket sometimes fails to set this variable (e.g. after consecutive failed
+  # builds, or when the pipeline YAML has changed).  As a fallback, query the
+  # Bitbucket Pipelines REST API for the most recently completed successful build
+  # on this branch and use its commit SHA.
+  if [ -z "${BITBUCKET_PREVIOUS_COMMIT:-}" ] && \
+     [ -n "${BITBUCKET_USERNAME:-}" ] && [ -n "${BITBUCKET_TOKEN:-}" ] && \
+     [ -n "${BITBUCKET_WORKSPACE:-}" ] && [ -n "${BITBUCKET_REPO_SLUG:-}" ]; then
+    log "BITBUCKET_PREVIOUS_COMMIT not set — querying Pipelines API for last successful commit"
+    API_PREV=$(curl -sf \
+      -u "${BITBUCKET_USERNAME}:${BITBUCKET_TOKEN}" \
+      "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/pipelines/?target.branch=${BITBUCKET_BRANCH}&sort=-created_on&pagelen=20" \
+      | jq -r '.values[] | select(.state.result.name == "SUCCESSFUL") | .target.commit.hash' \
+      | head -1 2>/dev/null) || true
+    if [ -n "${API_PREV:-}" ] && [ "$API_PREV" != "$HEAD_SHA" ]; then
+      log "API resolved previous successful commit: ${API_PREV:0:8}"
+      BITBUCKET_PREVIOUS_COMMIT="$API_PREV"
+    else
+      log "API query returned no usable previous commit (result: ${API_PREV:-<empty>})"
+    fi
+  fi
+
   if [ -n "${BITBUCKET_PREVIOUS_COMMIT:-}" ] && \
      git cat-file -e "${BITBUCKET_PREVIOUS_COMMIT}^{commit}" 2>/dev/null; then
     BASE_SHA="${BITBUCKET_PREVIOUS_COMMIT}"
-    log "Using BITBUCKET_PREVIOUS_COMMIT as base: ${BASE_SHA:0:8}"
+    log "Using previous successful commit as base: ${BASE_SHA:0:8}"
   else
     if [ -n "${BITBUCKET_PREVIOUS_COMMIT:-}" ]; then
-      warn "BITBUCKET_PREVIOUS_COMMIT (${BITBUCKET_PREVIOUS_COMMIT:0:8}) not found in local history — falling back to merge-base"
+      warn "Previous commit (${BITBUCKET_PREVIOUS_COMMIT:0:8}) not found in local history — falling back to merge-base"
     else
-      log "No BITBUCKET_PREVIOUS_COMMIT set — finding merge-base with default branch"
+      log "No previous commit available — finding merge-base with default branch"
     fi
     # Bitbucket clones with --depth 50.  Deepen the current clone and fetch the
     # default branch so the branch point is reachable for merge-base.
