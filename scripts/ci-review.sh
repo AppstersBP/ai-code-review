@@ -96,9 +96,17 @@ else
     git fetch --deepen=50 2>/dev/null || true
     git fetch origin master --depth=100 2>/dev/null || \
       git fetch origin main --depth=100 2>/dev/null || true
-    BASE_SHA=$(git merge-base HEAD origin/master 2>/dev/null \
-      || git merge-base HEAD origin/main 2>/dev/null) \
-      || { warn "git merge-base failed even after deepening — reviewing last commit only"; BASE_SHA=$(git rev-parse HEAD~1); }
+    if ! BASE_SHA=$(git merge-base HEAD origin/master 2>/dev/null \
+        || git merge-base HEAD origin/main 2>/dev/null); then
+      # Common ancestor still outside the shallow window — unshallow fully and retry.
+      warn "Merge-base not found in shallow history — unshallowing (may be slow)"
+      git fetch --unshallow 2>/dev/null || true
+      git fetch origin master 2>/dev/null || \
+        git fetch origin main 2>/dev/null || true
+      BASE_SHA=$(git merge-base HEAD origin/master 2>/dev/null \
+        || git merge-base HEAD origin/main 2>/dev/null) \
+        || { warn "Merge-base failed even after unshallowing — reviewing last commit only"; BASE_SHA=$(git rev-parse HEAD~1); }
+    fi
     log "Merge-base with default branch: ${BASE_SHA:0:8}"
   fi
 fi
