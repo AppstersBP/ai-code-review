@@ -44,7 +44,7 @@ apt-get update -qq && apt-get install -y -qq curl jq
 
 # Install Claude Code CLI
 curl -fsSL https://claude.ai/install.sh | bash
-export PATH="$HOME/.claude/bin:$PATH"
+export PATH="$HOME/.local/bin:$PATH"
 
 # Verify installation
 claude --version || fail "Claude Code installation failed"
