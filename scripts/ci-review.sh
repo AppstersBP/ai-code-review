@@ -204,6 +204,7 @@ rm -f "$RUNNER" "$PROMPT_FILE" "$APIKEY_FILE"
 
 # ─── Extract review text and log usage stats ─────────────────────────────────
 REVIEW_EXIT=0
+FAIL_REASON=""
 if [ ! -s review-raw.json ]; then
   warn "Claude produced no output — check review-stderr.txt"
   cat review-stderr.txt >&2 || true
@@ -229,10 +230,11 @@ log "Review complete. $(wc -l < review-output.txt) lines of output."
 # ─── 9. Detect Critical issues and set exit code ─────────────────────────────
 if echo "$REVIEW" | grep -q "### 🔴 Critical"; then
   CRITICAL_SECTION=$(echo "$REVIEW" | \
-    awk '/### 🔴 Critical/,/### 🟡/' | grep -v "^###" | grep -v "^$" || true)
+    awk '/### 🔴 Critical/,/### 🟡/' | grep -v "^###" | grep -v "^---" | grep -v "^$" || true)
   if echo "$CRITICAL_SECTION" | grep -qv "None\."; then
     warn "Critical issues found — pipeline will fail after notifications are sent"
     REVIEW_EXIT=1
+    FAIL_REASON="Review found Critical issues"
   fi
 fi
 echo "$REVIEW_EXIT" > review-exit-code.txt
@@ -257,9 +259,7 @@ bash "${SCRIPT_DIR}/post-slack.sh" \
 
 # ─── 12. Exit with correct code ──────────────────────────────────────────────
 if [ "$REVIEW_EXIT" -eq 1 ]; then
-  fail "$(grep -q '🔴 Critical' review-output.txt \
-    && echo 'Review found Critical issues — failing the build.' \
-    || echo 'Claude failed to produce a review — failing the build.')"
+  fail "${FAIL_REASON:-Claude failed to produce a review} — failing the build."
 fi
 
 log "Review completed successfully."
