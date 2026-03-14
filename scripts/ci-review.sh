@@ -68,23 +68,33 @@ fi
 
 # ─── 4. Resolve commit range ─────────────────────────────────────────────────
 log "Resolving commit range..."
+log "BITBUCKET_PREVIOUS_COMMIT=${BITBUCKET_PREVIOUS_COMMIT:-<not set>}"
 
 if [ "$IS_PR" = true ]; then
   git fetch origin "${BITBUCKET_PR_DESTINATION_BRANCH}" --depth=50 2>/dev/null || true
-  BASE_SHA=$(git merge-base HEAD "origin/${BITBUCKET_PR_DESTINATION_BRANCH}" 2>/dev/null \
-    || git rev-parse HEAD~1)
+  BASE_SHA=$(git merge-base HEAD "origin/${BITBUCKET_PR_DESTINATION_BRANCH}" 2>/dev/null) \
+    || { warn "git merge-base failed for PR — falling back to HEAD~1"; BASE_SHA=$(git rev-parse HEAD~1); }
   HEAD_SHA=$(git rev-parse HEAD)
 else
   HEAD_SHA=$(git rev-parse HEAD)
+  # BITBUCKET_PREVIOUS_COMMIT = HEAD SHA from the last successful pipeline run.
+  # When prior builds failed (e.g. permissions error on first run), Bitbucket may
+  # set BITBUCKET_PREVIOUS_COMMIT to a SHA that is itself part of the current push,
+  # causing that commit to be excluded from the review range.  Log it and verify.
   if [ -n "${BITBUCKET_PREVIOUS_COMMIT:-}" ] && \
      git cat-file -e "${BITBUCKET_PREVIOUS_COMMIT}^{commit}" 2>/dev/null; then
     BASE_SHA="${BITBUCKET_PREVIOUS_COMMIT}"
+    log "Using BITBUCKET_PREVIOUS_COMMIT as base: ${BASE_SHA:0:8}"
   else
-    git fetch origin main --depth=50 2>/dev/null || \
-      git fetch origin master --depth=50 2>/dev/null || true
-    BASE_SHA=$(git merge-base HEAD origin/main 2>/dev/null \
-      || git merge-base HEAD origin/master 2>/dev/null \
-      || git rev-parse HEAD~1)
+    if [ -n "${BITBUCKET_PREVIOUS_COMMIT:-}" ]; then
+      warn "BITBUCKET_PREVIOUS_COMMIT (${BITBUCKET_PREVIOUS_COMMIT:0:8}) not found in local history — falling back to merge-base"
+    fi
+    git fetch origin master --depth=50 2>/dev/null || \
+      git fetch origin main --depth=50 2>/dev/null || true
+    BASE_SHA=$(git merge-base HEAD origin/master 2>/dev/null \
+      || git merge-base HEAD origin/main 2>/dev/null) \
+      || { warn "git merge-base failed — falling back to HEAD~1"; BASE_SHA=$(git rev-parse HEAD~1); }
+    log "Merge-base fallback resolved to: ${BASE_SHA:0:8}"
   fi
 fi
 
