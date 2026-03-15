@@ -207,14 +207,14 @@ in `scripts/ci-review.sh`:
 ## Review Output Format
 
 Claude outputs a structured Markdown review that is posted verbatim to Slack and as a
-PR comment:
+PR comment. The `**Platform:**` field is included by the mobile skill only.
 
 ```
 ## 🔍 Code Review — {short SHA}
 
 **Commits reviewed:** {base}..{head}
 **Files changed:** {N}
-**Platform:** android | ios | generic
+**Platform:** android | ios   ← mobile skill only
 
 ### Summary
 ...
@@ -259,7 +259,14 @@ change in this repo silently affect every project's CI.
 | Cap per-review spend | Add `--max-budget-usd 2.00` to the `claude` invocation in `ci-review.sh` |
 | Force a specific skill regardless of platform | Set `SKILL_FILE` manually before the skill-selection block in `ci-review.sh` |
 | Add project-specific rules | Create `.claude/skills/<skill-name>.ext.md` in the project repo |
-| Change the output format | Edit the skill file's Step 4 section |
+| Change the output format | Edit the skill file's Step 4 section — **note constraints below** |
+
+> **Output format constraints:** `ci-review.sh` runs Claude with `--output-format json`
+> and extracts the review text from the `.result` field. `parse-review.sh` detects
+> critical and important findings by searching for the exact headings
+> `### 🔴 Critical` and `### 🟡 Important`. If you rename or remove these headings
+> the build-failure logic and Slack severity detection will stop working.
+> Cosmetic changes (wording, extra fields, reordering sections below Strengths) are safe.
 
 ---
 
