@@ -11,7 +11,10 @@
 #     "<repo name>" \
 #     "<branch>" \
 #     "<short sha>" \
-#     "<exit code: 0|1>"
+#     "<exit code: 0|1>" \
+#     "<commit range, e.g. abc1234..def5678>" \
+#     "<files changed count>" \
+#     "<platform: android|ios|generic>"
 #
 # Required env vars:
 #   SLACK_BOT_TOKEN, SLACK_CHANNEL_ID
@@ -32,6 +35,9 @@ REPO_NAME="${5:-repo}"
 BRANCH="${6:-unknown}"
 SHORT_SHA="${7:-unknown}"
 REVIEW_EXIT="${8:-0}"
+COMMIT_RANGE="${9:-}"
+FILES_CHANGED="${10:-}"
+PLATFORM="${11:-generic}"
 
 # ─── Determine status emoji and colour ───────────────────────────────────────
 if [ "$REVIEW_EXIT" -eq 1 ]; then
@@ -55,7 +61,12 @@ if [ "$IS_PR" = true ]; then
   EVENT_TYPE="Pull Request"
 else
   COMMIT_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/commits/${SHORT_SHA}"
-  CONTEXT_LINE="Branch \`${BRANCH}\` — <${COMMIT_URL}|View Commit ${SHORT_SHA}>"
+  # Use the reviewed commit range as the link text when available.
+  if [ -n "$COMMIT_RANGE" ]; then
+    CONTEXT_LINE="Branch \`${BRANCH}\` — <${COMMIT_URL}|${COMMIT_RANGE}>"
+  else
+    CONTEXT_LINE="Branch \`${BRANCH}\` — <${COMMIT_URL}|View Commit ${SHORT_SHA}>"
+  fi
   EVENT_TYPE="Push"
 fi
 
@@ -79,9 +90,10 @@ fi
 
 # ─── Build main message payload ───────────────────────────────────────────────
 # The top-level `text` carries the mention (triggers the notification) and is
-# visible above the card. The Author field always shows the plain git name.
-# The attachment holds the coloured summary card (no header block — avoids
-# duplicating the title that already appears in the notification text).
+# visible above the card. It does not repeat the status — that lives in the
+# Status field with its coloured circle.
+# Fields: Event, Author, Status (with emoji), Context, Commits, Files Changed,
+# and Platform (only for android/ios, omitted for generic).
 MAIN_PAYLOAD=$(jq -n \
   --arg channel "$SLACK_CHANNEL_ID" \
   --arg status_emoji "$STATUS_EMOJI" \
@@ -92,20 +104,28 @@ MAIN_PAYLOAD=$(jq -n \
   --arg author "$AUTHOR_NAME" \
   --arg colour "$COLOUR" \
   --arg mention "$MENTION" \
+  --arg commit_range "$COMMIT_RANGE" \
+  --arg files_changed "$FILES_CHANGED" \
+  --arg platform "$PLATFORM" \
   '{
     channel: $channel,
-    text: ($status_emoji + " Code Review · " + $repo + " — " + $status_text + "\n" + $mention),
+    text: ("Code Review · " + $repo + "\n" + $mention),
     attachments: [{
       color: $colour,
       blocks: [
         {
           type: "section",
-          fields: [
-            { type: "mrkdwn", text: ("*Event:*\n" + $event_type) },
-            { type: "mrkdwn", text: ("*Author:*\n" + $author) },
-            { type: "mrkdwn", text: ("*Status:*\n" + $status_text) },
-            { type: "mrkdwn", text: ("*Context:*\n" + $context_line) }
-          ]
+          fields: (
+            [
+              { type: "mrkdwn", text: ("*Event:*\n" + $event_type) },
+              { type: "mrkdwn", text: ("*Author:*\n" + $author) },
+              { type: "mrkdwn", text: ("*Status:*\n" + $status_emoji + " " + $status_text) },
+              { type: "mrkdwn", text: ("*Context:*\n" + $context_line) }
+            ]
+            + (if $commit_range != "" then [{ type: "mrkdwn", text: ("*Commits:*\n" + $commit_range) }] else [] end)
+            + (if $files_changed != "" then [{ type: "mrkdwn", text: ("*Files changed:*\n" + $files_changed) }] else [] end)
+            + (if $platform != "" and $platform != "generic" then [{ type: "mrkdwn", text: ("*Platform:*\n" + $platform) }] else [] end)
+          )
         }
       ]
     }]
@@ -128,13 +148,22 @@ fi
 THREAD_TS=$(echo "$RESPONSE" | jq -r '.ts')
 echo "[post-slack] Main message sent to channel ${SLACK_CHANNEL_ID} (ts: ${THREAD_TS})"
 
+# ─── Convert Markdown to Slack mrkdwn ────────────────────────────────────────
+# Slack does not render GitHub-flavoured Markdown. Convert the subset the
+# review uses: ## / ### headings → *bold*, **bold** → *bold*, strip --- lines.
+REVIEW_SLACK=$(printf '%s' "$REVIEW" \
+  | sed -e 's/^## \(.*\)$/*\1*/' \
+        -e 's/^### \(.*\)$/*\1*/' \
+        -e 's/\*\*\([^*]*\)\*\*/*\1*/g' \
+        -e '/^---$/d')
+
 # ─── Post full review as thread reply ────────────────────────────────────────
 # Slack places no meaningful character limit on the `text` field of a plain
 # message — long text gets a "Show more" expander. No truncation needed.
 THREAD_PAYLOAD=$(jq -n \
   --arg channel "$SLACK_CHANNEL_ID" \
   --arg thread_ts "$THREAD_TS" \
-  --arg review "$REVIEW" \
+  --arg review "$REVIEW_SLACK" \
   '{
     channel: $channel,
     thread_ts: $thread_ts,

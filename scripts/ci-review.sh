@@ -318,7 +318,10 @@ bash "${SCRIPT_DIR}/post-slack.sh" \
   "${REPO_NAME}" \
   "${BITBUCKET_BRANCH:-unknown}" \
   "${HEAD_SHA:0:8}" \
-  "${REVIEW_EXIT}" || warn "Failed to send Slack message"
+  "${REVIEW_EXIT}" \
+  "${BASE_SHA:0:8}..${HEAD_SHA:0:8}" \
+  "${CHANGED_FILES}" \
+  "${PLATFORM}" || warn "Failed to send Slack message"
 
 # ─── 12. Exit with correct code ──────────────────────────────────────────────
 if [ "$REVIEW_EXIT" -eq 1 ]; then
