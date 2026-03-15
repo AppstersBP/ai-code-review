@@ -60,11 +60,16 @@ if [ "$IS_PR" = true ]; then
   CONTEXT_LINE="PR #${BITBUCKET_PR_ID} — <${PR_URL}|View Pull Request>"
   EVENT_TYPE="Pull Request"
 else
-  COMMIT_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/commits/${SHORT_SHA}"
-  # Use the reviewed commit range as the link text when available.
+  # For a range of commits, link to Bitbucket's compare view so all changes
+  # are visible at once. The %0D separator is Bitbucket's compare URL format.
+  # Fall back to a single-commit link if no range is available.
   if [ -n "$COMMIT_RANGE" ]; then
-    CONTEXT_LINE="Branch \`${BRANCH}\` — <${COMMIT_URL}|${COMMIT_RANGE}>"
+    BASE_SHA_SHORT="${COMMIT_RANGE%..*}"
+    HEAD_SHA_SHORT="${COMMIT_RANGE#*..}"
+    COMPARE_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/branches/compare/${HEAD_SHA_SHORT}%0D${BASE_SHA_SHORT}#diff"
+    CONTEXT_LINE="Branch \`${BRANCH}\` — <${COMPARE_URL}|${COMMIT_RANGE}>"
   else
+    COMMIT_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/commits/${SHORT_SHA}"
     CONTEXT_LINE="Branch \`${BRANCH}\` — <${COMMIT_URL}|View Commit ${SHORT_SHA}>"
   fi
   EVENT_TYPE="Push"
