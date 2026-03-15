@@ -84,13 +84,32 @@ fi
 
 HEAD_SHA=$(git rev-parse HEAD)
 
+_merge_base_via_fetch_head() {
+  # Try merge-base with current (possibly shallow) history.
+  # If it fails, unshallow the feature branch and retry.
+  # This handles both short-lived branches (fast path) and long-lived
+  # branches with more commits than the initial clone depth (slow path).
+  local label="$1"
+  if BASE_SHA=$(git merge-base HEAD FETCH_HEAD 2>/dev/null); then
+    log "${label}: base is merge-base (via FETCH_HEAD) = ${BASE_SHA:0:8}"
+  else
+    warn "Merge-base not in shallow history — unshallowing feature branch"
+    git fetch --unshallow 2>/dev/null || true
+    BASE_SHA=$(git merge-base HEAD FETCH_HEAD 2>/dev/null) \
+      || { warn "Merge-base failed after unshallow — falling back to HEAD~1"; \
+           BASE_SHA=$(git rev-parse HEAD~1); }
+    log "${label}: base after unshallow = ${BASE_SHA:0:8}"
+  fi
+}
+
 if [ "$IS_PR" = true ]; then
-  # PR mode: compare against the destination branch
+  # PR mode: compare against the destination branch.
+  # Fetch full history (no --depth) so the merge-base is always reachable.
+  # Use FETCH_HEAD — a depth clone sets a single-branch refspec so fetching
+  # another branch does not create origin/<branch>.
   DEST_BRANCH="${BITBUCKET_PR_DESTINATION_BRANCH:-main}"
-  git fetch origin "${DEST_BRANCH}" --depth=100 2>/dev/null || true
-  BASE_SHA=$(git merge-base HEAD "origin/${DEST_BRANCH}" \
-    2>/dev/null || git rev-parse HEAD~1)
-  log "PR mode: base is merge-base with origin/${DEST_BRANCH}"
+  git fetch origin "${DEST_BRANCH}" 2>/dev/null || true
+  _merge_base_via_fetch_head "PR vs ${DEST_BRANCH}"
 
 else
   # Push mode: find the default branch, then use merge-base.
@@ -106,29 +125,22 @@ else
       | grep 'HEAD branch' | awk '{print $NF}')
 
     if [ -z "$DEFAULT_BRANCH" ]; then
-      # Fallback: try main, then master
-      if git rev-parse --verify origin/main &>/dev/null; then
-        DEFAULT_BRANCH="main"
-        log "Auto-detect failed, fell back to: main"
-      elif git rev-parse --verify origin/master &>/dev/null; then
-        DEFAULT_BRANCH="master"
-        log "Auto-detect failed, fell back to: master"
-      else
-        fail "Could not determine default branch. Set a DEFAULT_BRANCH repository variable in Bitbucket."
-      fi
+      warn "Could not auto-detect default branch — trying main, then master"
+      DEFAULT_BRANCH="main"
     else
       log "Auto-detected default branch: ${DEFAULT_BRANCH}"
     fi
   fi
 
-  git fetch origin "${DEFAULT_BRANCH}" --depth=100 2>/dev/null || true
+  # Fetch full history (no --depth) so the merge-base is always reachable.
+  # Use FETCH_HEAD — a depth clone sets a single-branch refspec so fetching
+  # another branch does not create origin/<branch>.
+  git fetch origin "${DEFAULT_BRANCH}" 2>/dev/null || \
+    git fetch origin master 2>/dev/null || true
 
-  if git rev-parse "origin/${DEFAULT_BRANCH}" &>/dev/null; then
-    BASE_SHA=$(git merge-base HEAD "origin/${DEFAULT_BRANCH}" \
-      2>/dev/null || git rev-parse HEAD~1)
-    log "Push mode: base is merge-base with origin/${DEFAULT_BRANCH}"
+  if git rev-parse FETCH_HEAD &>/dev/null; then
+    _merge_base_via_fetch_head "Push vs ${DEFAULT_BRANCH}"
   else
-    # Last resort: review only the latest commit
     BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
     warn "Could not fetch default branch — falling back to HEAD~1"
   fi
