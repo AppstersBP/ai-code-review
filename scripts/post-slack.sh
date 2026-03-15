@@ -59,18 +59,11 @@ else
   EVENT_TYPE="Push"
 fi
 
-# ─── Truncate review for Slack (max ~3000 chars to stay readable) ─────────────
-MAX_CHARS=2800
-if [ ${#REVIEW} -gt $MAX_CHARS ]; then
-  REVIEW_TRUNCATED="${REVIEW:0:$MAX_CHARS}
-
-_... review truncated. See PR comment or CI logs for full output._"
-else
-  REVIEW_TRUNCATED="$REVIEW"
-fi
-
-# ─── Build Slack Block Kit payload ───────────────────────────────────────────
-PAYLOAD=$(jq -n \
+# ─── Build main message payload ───────────────────────────────────────────────
+# The top-level `text` is used as the notification/preview text only.
+# The attachment holds the coloured summary card (no header block — avoids
+# duplicating the title that already appears in the notification text).
+MAIN_PAYLOAD=$(jq -n \
   --arg channel "$SLACK_CHANNEL_ID" \
   --arg status_emoji "$STATUS_EMOJI" \
   --arg status_text "$STATUS_TEXT" \
@@ -78,22 +71,13 @@ PAYLOAD=$(jq -n \
   --arg event_type "$EVENT_TYPE" \
   --arg context_line "$CONTEXT_LINE" \
   --arg author "$AUTHOR_NAME" \
-  --arg review "$REVIEW_TRUNCATED" \
   --arg colour "$COLOUR" \
   '{
     channel: $channel,
-    text: ($status_emoji + " Claude Code Review · " + $repo),
+    text: ($status_emoji + " Code Review · " + $repo + " — " + $status_text),
     attachments: [{
       color: $colour,
       blocks: [
-        {
-          type: "header",
-          text: {
-            type: "plain_text",
-            text: ($status_emoji + " Code Review · " + $repo),
-            emoji: true
-          }
-        },
         {
           type: "section",
           fields: [
@@ -102,31 +86,52 @@ PAYLOAD=$(jq -n \
             { type: "mrkdwn", text: ("*Status:*\n" + $status_text) },
             { type: "mrkdwn", text: ("*Context:*\n" + $context_line) }
           ]
-        },
-        { type: "divider" },
-        {
-          type: "section",
-          text: {
-            type: "mrkdwn",
-            text: $review
-          }
         }
       ]
     }]
   }')
 
-# ─── Post to Slack ────────────────────────────────────────────────────────────
+# ─── Post main message ────────────────────────────────────────────────────────
 RESPONSE=$(curl -s -X POST "https://slack.com/api/chat.postMessage" \
   -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
   -H "Content-Type: application/json" \
-  -d "${PAYLOAD}")
+  -d "${MAIN_PAYLOAD}")
 
 OK=$(echo "$RESPONSE" | jq -r '.ok' 2>/dev/null || echo "false")
-if [ "$OK" = "true" ]; then
-  echo "[post-slack] Message sent to channel ${SLACK_CHANNEL_ID}"
-else
+if [ "$OK" != "true" ]; then
   ERROR=$(echo "$RESPONSE" | jq -r '.error' 2>/dev/null || echo "unknown")
   echo "[post-slack] Failed to send Slack message: ${ERROR}" >&2
   echo "[post-slack] Full response: ${RESPONSE}" >&2
+  exit 1
+fi
+
+THREAD_TS=$(echo "$RESPONSE" | jq -r '.ts')
+echo "[post-slack] Main message sent to channel ${SLACK_CHANNEL_ID} (ts: ${THREAD_TS})"
+
+# ─── Post full review as thread reply ────────────────────────────────────────
+# Slack places no meaningful character limit on the `text` field of a plain
+# message — long text gets a "Show more" expander. No truncation needed.
+THREAD_PAYLOAD=$(jq -n \
+  --arg channel "$SLACK_CHANNEL_ID" \
+  --arg thread_ts "$THREAD_TS" \
+  --arg review "$REVIEW" \
+  '{
+    channel: $channel,
+    thread_ts: $thread_ts,
+    text: $review
+  }')
+
+THREAD_RESPONSE=$(curl -s -X POST "https://slack.com/api/chat.postMessage" \
+  -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "${THREAD_PAYLOAD}")
+
+OK=$(echo "$THREAD_RESPONSE" | jq -r '.ok' 2>/dev/null || echo "false")
+if [ "$OK" = "true" ]; then
+  echo "[post-slack] Review posted to thread"
+else
+  ERROR=$(echo "$THREAD_RESPONSE" | jq -r '.error' 2>/dev/null || echo "unknown")
+  echo "[post-slack] Failed to post review thread: ${ERROR}" >&2
+  echo "[post-slack] Full response: ${THREAD_RESPONSE}" >&2
   exit 1
 fi
