@@ -59,8 +59,27 @@ else
   EVENT_TYPE="Push"
 fi
 
+# ─── Resolve author mention ───────────────────────────────────────────────────
+# Try to look up the author's Slack user ID by email. Falls back to @here if
+# the email is not found or if the users:read.email scope is not granted.
+# The script never fails due to a lookup error.
+MENTION="<!here>"
+if [ -n "${AUTHOR_EMAIL:-}" ]; then
+  LOOKUP=$(curl -s \
+    "https://slack.com/api/users.lookupByEmail?email=${AUTHOR_EMAIL}" \
+    -H "Authorization: Bearer ${SLACK_BOT_TOKEN}" || true)
+  SLACK_USER_ID=$(echo "$LOOKUP" | jq -r 'if .ok then .user.id else "" end' 2>/dev/null || true)
+  if [ -n "$SLACK_USER_ID" ]; then
+    MENTION="<@${SLACK_USER_ID}>"
+    echo "[post-slack] Resolved ${AUTHOR_EMAIL} → ${SLACK_USER_ID}"
+  else
+    echo "[post-slack] Could not resolve ${AUTHOR_EMAIL} to a Slack user — using @here"
+  fi
+fi
+
 # ─── Build main message payload ───────────────────────────────────────────────
-# The top-level `text` is used as the notification/preview text only.
+# The top-level `text` carries the mention (triggers the notification) and is
+# visible above the card. The Author field always shows the plain git name.
 # The attachment holds the coloured summary card (no header block — avoids
 # duplicating the title that already appears in the notification text).
 MAIN_PAYLOAD=$(jq -n \
@@ -72,9 +91,10 @@ MAIN_PAYLOAD=$(jq -n \
   --arg context_line "$CONTEXT_LINE" \
   --arg author "$AUTHOR_NAME" \
   --arg colour "$COLOUR" \
+  --arg mention "$MENTION" \
   '{
     channel: $channel,
-    text: ($status_emoji + " Code Review · " + $repo + " — " + $status_text),
+    text: ($status_emoji + " Code Review · " + $repo + " — " + $status_text + "\n" + $mention),
     attachments: [{
       color: $colour,
       blocks: [

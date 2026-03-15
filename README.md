@@ -94,6 +94,9 @@ shared repository.
 3. Go to **OAuth & Permissions** → **Bot Token Scopes**, add:
    - `chat:write`
    - `chat:write.public` (only needed for public channels)
+   - `users:read.email` — allows the bot to look up a Slack user by the commit
+     author's email address and mention them directly. Without this scope the
+     bot falls back to `@here` instead of a personal mention.
 4. Click **Install to Workspace**
 5. Copy the **Bot User OAuth Token** (`xoxb-...`)
 6. Invite the bot to your channel: `/invite @Claude Code Reviewer`
@@ -288,6 +291,12 @@ Verify `BITBUCKET_USERNAME` and `BITBUCKET_TOKEN` are correct and the App Passwo
 
 **Slack message fails with `channel_not_found`**
 The bot has not been invited to the channel. Run `/invite @Claude Code Reviewer` in Slack.
+
+**Slack notification uses `@here` instead of mentioning the author**
+The bot needs the `users:read.email` scope to look up a user by commit email. Add the
+scope under **OAuth & Permissions → Bot Token Scopes**, reinstall the app, and update
+`SLACK_BOT_TOKEN` with the new token. The fallback to `@here` is intentional and safe —
+the script never fails if the lookup is unavailable.
 
 **Review seems shallow**
 Increase `--max-turns` in `ci-review.sh`. Complex codebases with many cross-module
