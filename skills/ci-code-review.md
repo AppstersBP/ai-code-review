@@ -40,6 +40,15 @@ git diff $BASE_SHA..$HEAD_SHA
 
 List every file that was added, modified, or deleted. Note which commits touched which files.
 
+To identify which commits belong to the primary author under review:
+
+```bash
+git log --oneline --author="${AUTHOR_EMAIL}" $BASE_SHA..$HEAD_SHA
+```
+
+Note which commits were authored by others — you will apply different review
+rules to them as described in the Behaviour Rules section below.
+
 ---
 
 ## Step 2 — Explore Context Around Changes
@@ -137,6 +146,8 @@ before or after it. This output will be posted directly to Slack or as a PR comm
 
 ### Verdict
 {One of: APPROVED | APPROVED WITH SUGGESTIONS | CHANGES REQUESTED}
+{If CHANGES REQUESTED, state whether it is due to the primary author's work
+or a Critical issue found in another author's commits.}
 ```
 
 ---
@@ -155,6 +166,29 @@ before or after it. This output will be posted directly to Slack or as a PR comm
 - Base every finding on actual code you read, with file and line references
 - Give actionable, specific feedback — not vague warnings
 - If a change looks risky but is correct, note it as a suggestion, not a critical
+
+**Multi-author commit ranges:**
+
+The commit range may include commits authored by developers other than
+`${AUTHOR_EMAIL}` (the primary author). Apply these rules:
+
+For commits by `${AUTHOR_EMAIL}`:
+- Review fully across all dimensions
+- Raise Critical, Important, and Suggestions as normal
+
+For commits by other authors:
+- **Always raise Critical issues** — they must never be missed regardless of
+  who introduced them. A Critical issue in a base commit is still a blocker
+  because the primary author's code may depend on it.
+- Raise Important and Suggestions as informational context only
+- Label these clearly as `[other author]` in the finding
+- Do not count Important or Suggestions from other authors toward the Verdict
+
+**Verdict is determined by:**
+- All Critical issues, from any author → block the build (CHANGES REQUESTED)
+- Important and Suggestions from the primary author → affect the Verdict
+- Important and Suggestions from other authors → informational only, do not
+  affect the Verdict
 
 **If the diff is empty or BASE_SHA equals HEAD_SHA:**
 Output: `## ✅ Code Review — Nothing to review. No changes detected between {BASE_SHA} and {HEAD_SHA}.`

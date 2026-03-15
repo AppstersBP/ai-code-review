@@ -40,6 +40,10 @@ log "Checking required environment variables..."
 : "${BITBUCKET_TOKEN:?Required variable BITBUCKET_TOKEN is not set}"
 : "${BITBUCKET_USERNAME:?Required variable BITBUCKET_USERNAME is not set}"
 
+# Optional: allow manual override of default branch via repository variable.
+# If not set, it will be auto-detected from the remote.
+MANUAL_DEFAULT_BRANCH="${DEFAULT_BRANCH:-}"
+
 # ─── 2. Install dependencies ──────────────────────────────────────────────────
 log "Installing dependencies..."
 apt-get update -qq && apt-get install -y -qq curl jq
@@ -66,9 +70,8 @@ else
   log "Context: Push to branch ${BITBUCKET_BRANCH}"
 fi
 
-# ─── 4. Resolve commit range ─────────────────────────────────────────────────
+# ─── 4. Resolve commit range (merge-base with default branch) ────────────────
 log "Resolving commit range..."
-log "BITBUCKET_PREVIOUS_COMMIT=${BITBUCKET_PREVIOUS_COMMIT:-<not set>}"
 
 # Bitbucket rewrites the remote URL to a plain http:// address, but its
 # authentication proxy is only configured for BITBUCKET_GIT_HTTP_ORIGIN
@@ -79,62 +82,55 @@ if [ -n "${BITBUCKET_GIT_HTTP_ORIGIN:-}" ]; then
   log "Remote URL set to BITBUCKET_GIT_HTTP_ORIGIN for authenticated fetches"
 fi
 
+HEAD_SHA=$(git rev-parse HEAD)
+
 if [ "$IS_PR" = true ]; then
-  git fetch origin "${BITBUCKET_PR_DESTINATION_BRANCH}" --depth=50 2>/dev/null || true
-  BASE_SHA=$(git merge-base HEAD "origin/${BITBUCKET_PR_DESTINATION_BRANCH}" 2>/dev/null) \
-    || { warn "git merge-base failed for PR — falling back to HEAD~1"; BASE_SHA=$(git rev-parse HEAD~1); }
-  HEAD_SHA=$(git rev-parse HEAD)
+  # PR mode: compare against the destination branch
+  DEST_BRANCH="${BITBUCKET_PR_DESTINATION_BRANCH:-main}"
+  git fetch origin "${DEST_BRANCH}" --depth=100 2>/dev/null || true
+  BASE_SHA=$(git merge-base HEAD "origin/${DEST_BRANCH}" \
+    2>/dev/null || git rev-parse HEAD~1)
+  log "PR mode: base is merge-base with origin/${DEST_BRANCH}"
+
 else
-  HEAD_SHA=$(git rev-parse HEAD)
-  # BITBUCKET_PREVIOUS_COMMIT = HEAD SHA from the last successful pipeline run.
-  # Bitbucket sometimes fails to set this variable (e.g. after consecutive failed
-  # builds, or when the pipeline YAML has changed).  As a fallback, query the
-  # Bitbucket Pipelines REST API for the most recently completed successful build
-  # on this branch and use its commit SHA.
-  if [ -z "${BITBUCKET_PREVIOUS_COMMIT:-}" ] && \
-     [ -n "${BITBUCKET_USERNAME:-}" ] && [ -n "${BITBUCKET_TOKEN:-}" ] && \
-     [ -n "${BITBUCKET_WORKSPACE:-}" ] && [ -n "${BITBUCKET_REPO_SLUG:-}" ]; then
-    log "BITBUCKET_PREVIOUS_COMMIT not set — querying Pipelines API for last successful commit"
-    API_PREV=$(curl -sf \
-      -u "${BITBUCKET_USERNAME}:${BITBUCKET_TOKEN}" \
-      "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_WORKSPACE}/${BITBUCKET_REPO_SLUG}/pipelines/?target.branch=${BITBUCKET_BRANCH}&sort=-created_on&pagelen=20" \
-      | jq -r '.values[] | select(.state.result.name == "SUCCESSFUL") | .target.commit.hash' \
-      | head -1 2>/dev/null) || true
-    if [ -n "${API_PREV:-}" ] && [ "$API_PREV" != "$HEAD_SHA" ]; then
-      log "API resolved previous successful commit: ${API_PREV:0:8}"
-      BITBUCKET_PREVIOUS_COMMIT="$API_PREV"
+  # Push mode: find the default branch, then use merge-base.
+  # This is reliable and platform-agnostic — no dependency on
+  # BITBUCKET_PREVIOUS_COMMIT, which Bitbucket does not always set.
+
+  if [ -n "${MANUAL_DEFAULT_BRANCH}" ]; then
+    DEFAULT_BRANCH="${MANUAL_DEFAULT_BRANCH}"
+    log "Using manually configured default branch: ${DEFAULT_BRANCH}"
+  else
+    # Auto-detect from remote
+    DEFAULT_BRANCH=$(git remote show origin 2>/dev/null \
+      | grep 'HEAD branch' | awk '{print $NF}')
+
+    if [ -z "$DEFAULT_BRANCH" ]; then
+      # Fallback: try main, then master
+      if git rev-parse --verify origin/main &>/dev/null; then
+        DEFAULT_BRANCH="main"
+        log "Auto-detect failed, fell back to: main"
+      elif git rev-parse --verify origin/master &>/dev/null; then
+        DEFAULT_BRANCH="master"
+        log "Auto-detect failed, fell back to: master"
+      else
+        fail "Could not determine default branch. Set a DEFAULT_BRANCH repository variable in Bitbucket."
+      fi
     else
-      log "API query returned no usable previous commit (result: ${API_PREV:-<empty>})"
+      log "Auto-detected default branch: ${DEFAULT_BRANCH}"
     fi
   fi
 
-  if [ -n "${BITBUCKET_PREVIOUS_COMMIT:-}" ] && \
-     git cat-file -e "${BITBUCKET_PREVIOUS_COMMIT}^{commit}" 2>/dev/null; then
-    BASE_SHA="${BITBUCKET_PREVIOUS_COMMIT}"
-    log "Using previous successful commit as base: ${BASE_SHA:0:8}"
+  git fetch origin "${DEFAULT_BRANCH}" --depth=100 2>/dev/null || true
+
+  if git rev-parse "origin/${DEFAULT_BRANCH}" &>/dev/null; then
+    BASE_SHA=$(git merge-base HEAD "origin/${DEFAULT_BRANCH}" \
+      2>/dev/null || git rev-parse HEAD~1)
+    log "Push mode: base is merge-base with origin/${DEFAULT_BRANCH}"
   else
-    if [ -n "${BITBUCKET_PREVIOUS_COMMIT:-}" ]; then
-      warn "Previous commit (${BITBUCKET_PREVIOUS_COMMIT:0:8}) not found in local history — falling back to merge-base"
-    else
-      log "No previous commit available — finding merge-base with default branch"
-    fi
-    # Bitbucket clones with --depth 50.  Deepen the current clone and fetch the
-    # default branch so the branch point is reachable for merge-base.
-    git fetch --deepen=50 2>/dev/null || true
-    git fetch origin master --depth=100 2>/dev/null || \
-      git fetch origin main --depth=100 2>/dev/null || true
-    if ! BASE_SHA=$(git merge-base HEAD origin/master 2>/dev/null \
-        || git merge-base HEAD origin/main 2>/dev/null); then
-      # Common ancestor still outside the shallow window — unshallow fully and retry.
-      warn "Merge-base not found in shallow history — unshallowing (may be slow)"
-      git fetch --unshallow 2>/dev/null || true
-      git fetch origin master 2>/dev/null || \
-        git fetch origin main 2>/dev/null || true
-      BASE_SHA=$(git merge-base HEAD origin/master 2>/dev/null \
-        || git merge-base HEAD origin/main 2>/dev/null) \
-        || { warn "Merge-base failed even after unshallowing — reviewing last commit only"; BASE_SHA=$(git rev-parse HEAD~1); }
-    fi
-    log "Merge-base with default branch: ${BASE_SHA:0:8}"
+    # Last resort: review only the latest commit
+    BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+    warn "Could not fetch default branch — falling back to HEAD~1"
   fi
 fi
 
@@ -209,8 +205,12 @@ CONTEXT:
 - Branch: ${BITBUCKET_BRANCH:-unknown}
 - Platform: ${PLATFORM}
 - Commit range: BASE_SHA=${BASE_SHA} HEAD_SHA=${HEAD_SHA}
-- Author: ${AUTHOR_NAME}
+- Primary author name: ${AUTHOR_NAME}
+- Primary author email: ${AUTHOR_EMAIL}
 - Latest commit: ${COMMIT_MSG}
+- Commit range context: this range may include commits by other developers
+  that form the base of this branch. Apply the multi-author review rules
+  defined in the skill instructions below.
 
 $(if [ "$IS_PR" = true ]; then
   echo "- This is Pull Request #${BITBUCKET_PR_ID}: ${BITBUCKET_PR_DESTINATION_BRANCH} ← ${BITBUCKET_BRANCH}"

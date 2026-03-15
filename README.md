@@ -17,7 +17,7 @@ bitbucket-pipelines.yml
   git clone AppstersBP/ai-code-review
   bash .ai-code-review/scripts/ci-review.sh
        │
-       ├─ Resolves commit range (PREVIOUS_COMMIT..HEAD or merge-base..HEAD)
+       ├─ Resolves commit range (merge-base with default branch..HEAD)
        ├─ Detects platform (Android / iOS / generic)
        ├─ Selects skill file from skills/
        ├─ Appends .claude/skills/*.ext.md if present in the project repo
@@ -29,7 +29,7 @@ bitbucket-pipelines.yml
 
 | Event | Commit range reviewed | PR comment | Slack |
 |-------|-----------------------|------------|-------|
-| Push to any branch | `PREVIOUS_COMMIT..HEAD` | No | Yes |
+| Push to any branch | `merge-base(HEAD, default-branch)..HEAD` | No | Yes |
 | Pull Request opened / updated | `merge-base(HEAD, destination)..HEAD` | Yes | Yes |
 
 ---
@@ -118,13 +118,14 @@ Use an API token instead.
 
 In Bitbucket: **Repository settings** → **Repository variables**
 
-| Variable | Value | Secured |
-|----------|-------|---------|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes |
-| `SLACK_BOT_TOKEN` | `xoxb-...` from step 2 | ✅ Yes |
-| `SLACK_CHANNEL_ID` | Channel ID from step 2 | No |
-| `BITBUCKET_TOKEN` | API token from step 3 (starts with `ATAT`) | ✅ Yes |
-| `BITBUCKET_USERNAME` | Your Atlassian **account email address** | No |
+| Variable | Value | Secured | Required |
+|----------|-------|---------|---------|
+| `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes | Yes |
+| `SLACK_BOT_TOKEN` | `xoxb-...` from step 2 | ✅ Yes | Yes |
+| `SLACK_CHANNEL_ID` | Channel ID from step 2 | No | Yes |
+| `BITBUCKET_TOKEN` | API token from step 3 (starts with `ATAT`) | ✅ Yes | Yes |
+| `BITBUCKET_USERNAME` | Your Atlassian **account email address** | No | Yes |
+| `DEFAULT_BRANCH` | e.g. `develop` — overrides auto-detection of the default branch | No | No |
 
 ---
 
