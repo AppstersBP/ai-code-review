@@ -112,7 +112,7 @@ if [ "$IS_PR" = true ]; then
   _merge_base_via_fetch_head "PR vs ${DEST_BRANCH}"
 
 else
-  # Push mode: find the default branch, then use merge-base.
+  # Push mode: find the default branch, then choose the right base strategy.
   # This is reliable and platform-agnostic — no dependency on
   # BITBUCKET_PREVIOUS_COMMIT, which Bitbucket does not always set.
 
@@ -132,17 +132,29 @@ else
     fi
   fi
 
-  # Fetch full history (no --depth) so the merge-base is always reachable.
-  # Use FETCH_HEAD — a depth clone sets a single-branch refspec so fetching
-  # another branch does not create origin/<branch>.
-  git fetch origin "${DEFAULT_BRANCH}" 2>/dev/null || \
-    git fetch origin master 2>/dev/null || true
-
-  if git rev-parse FETCH_HEAD &>/dev/null; then
-    _merge_base_via_fetch_head "Push vs ${DEFAULT_BRANCH}"
+  if [ "${BITBUCKET_BRANCH:-}" = "$DEFAULT_BRANCH" ]; then
+    # Pushing directly to the default branch (e.g. a merge commit landing on
+    # master). merge-base(HEAD, fetch(master)) would equal HEAD itself,
+    # producing an empty range. Use HEAD^1 instead: for a merge commit that is
+    # the previous tip of master; for a direct commit it is the prior commit.
+    BASE_SHA=$(git rev-parse HEAD^1 2>/dev/null) \
+      || { warn "HEAD^1 not available — falling back to HEAD"; BASE_SHA=$(git rev-parse HEAD); }
+    log "Push to default branch: base = HEAD^1 = ${BASE_SHA:0:8}"
   else
-    BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
-    warn "Could not fetch default branch — falling back to HEAD~1"
+    # Feature branch push: use merge-base with the default branch so the range
+    # covers exactly the commits on this branch and nothing from master.
+    # Fetch full history (no --depth) so the merge-base is always reachable.
+    # Use FETCH_HEAD — a depth clone sets a single-branch refspec so fetching
+    # another branch does not create origin/<branch>.
+    git fetch origin "${DEFAULT_BRANCH}" 2>/dev/null || \
+      git fetch origin master 2>/dev/null || true
+
+    if git rev-parse FETCH_HEAD &>/dev/null; then
+      _merge_base_via_fetch_head "Push vs ${DEFAULT_BRANCH}"
+    else
+      BASE_SHA=$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)
+      warn "Could not fetch default branch — falling back to HEAD~1"
+    fi
   fi
 fi
 
