@@ -279,16 +279,27 @@ su -s /bin/bash reviewer -c "$RUNNER $APIKEY_FILE $BUILD_DIR $PROMPT_FILE" \
 rm -f "$RUNNER" "$PROMPT_FILE" "$APIKEY_FILE"
 
 # ─── Extract review text and log usage stats ─────────────────────────────────
+_log_claude_debug() {
+  # Print stderr and the non-result fields from the raw JSON to the CI log.
+  # Both review-stderr.txt and review-raw.json are also saved as artifacts.
+  warn "=== review-stderr.txt ==="
+  cat review-stderr.txt >&2 || true
+  if [ -s review-raw.json ]; then
+    warn "=== review-raw.json (excluding .result) ==="
+    jq 'del(.result)' review-raw.json >&2 || cat review-raw.json >&2 || true
+  fi
+}
+
 REVIEW_EXIT=0
 FAIL_REASON=""
 if [ ! -s review-raw.json ]; then
-  warn "Claude produced no output — check review-stderr.txt"
-  cat review-stderr.txt >&2 || true
+  warn "Claude produced no output"
+  _log_claude_debug
   echo "❌ Code review failed to produce output. Check CI logs." > review-output.txt
   REVIEW_EXIT=1
+  FAIL_REASON="Claude produced no output"
 else
-  jq -r '.result // "❌ Code review failed to produce output. Check CI logs."' \
-    review-raw.json > review-output.txt
+  REVIEW_TEXT=$(jq -r '.result // ""' review-raw.json)
 
   INPUT_TOKENS=$(jq -r '.usage.input_tokens          // 0' review-raw.json)
   OUTPUT_TOKENS=$(jq -r '.usage.output_tokens         // 0' review-raw.json)
@@ -298,6 +309,16 @@ else
 
   log "Token usage — input: ${INPUT_TOKENS} | cache_read: ${CACHE_READ} | cache_write: ${CACHE_WRITE} | output: ${OUTPUT_TOKENS}"
   log "Estimated cost: \$$(printf '%.4f' "${COST}")"
+
+  if [ -z "$REVIEW_TEXT" ]; then
+    warn "Claude returned JSON but .result is empty (turn limit reached or API error)"
+    _log_claude_debug
+    echo "❌ Code review failed to produce output. Check CI logs." > review-output.txt
+    REVIEW_EXIT=1
+    FAIL_REASON="Claude returned no review content"
+  else
+    echo "$REVIEW_TEXT" > review-output.txt
+  fi
 fi
 
 REVIEW=$(cat review-output.txt)
