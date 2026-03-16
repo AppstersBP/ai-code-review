@@ -129,6 +129,7 @@ In Bitbucket: **Repository settings** → **Repository variables**
 | `BITBUCKET_TOKEN` | API token from step 3 (starts with `ATAT`) | ✅ Yes | Yes |
 | `BITBUCKET_USERNAME` | Your Atlassian **account email address** | No | Yes |
 | `DEFAULT_BRANCH` | e.g. `develop` — overrides auto-detection of the default branch | No | No |
+| `CLAUDE_MAX_TURNS` | Maximum Claude turns per review (default `30`). Increase for large diffs; decrease to cap spend. | No | No |
 
 ---
 
@@ -258,7 +259,7 @@ change in this repo silently affect every project's CI.
 
 | Goal | What to change |
 |------|----------------|
-| More thorough review on large diffs | Increase `--max-turns` (default 30) in `ci-review.sh` |
+| More thorough review on large diffs | Set the `CLAUDE_MAX_TURNS` repository variable (default `30`) |
 | Cap per-review spend | Add `--max-budget-usd 2.00` to the `claude` invocation in `ci-review.sh` |
 | Force a specific skill regardless of platform | Set `SKILL_FILE` manually before the skill-selection block in `ci-review.sh` |
 | Add project-specific rules | Create `.claude/skills/<skill-name>.ext.md` in the project repo |

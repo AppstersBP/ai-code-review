@@ -255,8 +255,15 @@ printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > "$APIKEY_FILE"
 chmod 600 "$APIKEY_FILE"
 chown reviewer "$APIKEY_FILE" "$PROMPT_FILE"
 
+# Optional: allow the number of Claude turns to be tuned via a repository
+# variable. Higher values give more thorough reviews on large diffs but
+# consume more pipeline minutes and API spend.
+MAX_TURNS="${CLAUDE_MAX_TURNS:-30}"
+log "Max turns: ${MAX_TURNS}"
+
 # Runner script executed as the non-root reviewer user.
 # git requires safe.directory when the repo is owned by a different user.
+# $1 = api key env file, $2 = build dir, $3 = prompt file, $4 = max turns
 BUILD_DIR="$(pwd)"
 RUNNER=$(mktemp /tmp/runner.XXXXXX.sh)
 cat > "$RUNNER" << 'RUNNER_EOF'
@@ -267,13 +274,13 @@ git config --global --add safe.directory "$2" 2>/dev/null || true
 claude -p "$(cat "$3")" \
   --allowedTools 'Bash(git *)' 'Read' 'Grep' 'Glob' \
   --dangerously-skip-permissions \
-  --max-turns 30 \
+  --max-turns "$4" \
   --output-format json
 RUNNER_EOF
 chmod 755 "$RUNNER"
 chown reviewer "$RUNNER"
 
-su -s /bin/bash reviewer -c "$RUNNER $APIKEY_FILE $BUILD_DIR $PROMPT_FILE" \
+su -s /bin/bash reviewer -c "$RUNNER $APIKEY_FILE $BUILD_DIR $PROMPT_FILE $MAX_TURNS" \
   > review-raw.json 2>review-stderr.txt || true
 
 rm -f "$RUNNER" "$PROMPT_FILE" "$APIKEY_FILE"
