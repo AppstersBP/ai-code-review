@@ -300,8 +300,9 @@ scope under **OAuth & Permissions → Bot Token Scopes**, reinstall the app, and
 the script never fails if the lookup is unavailable.
 
 **Review seems shallow**
-Increase `--max-turns` in `ci-review.sh`. Complex codebases with many cross-module
-dependencies may need 40–50 turns for thorough context exploration.
+Set the `CLAUDE_MAX_TURNS` repository variable to a higher value (default `30`). Complex
+codebases with many cross-module dependencies may need 40–50 turns for thorough context
+exploration.
 
 **Extension file not being applied**
 Confirm the file is named exactly `<skill-name>.ext.md` (e.g. `ci-code-review-mobile.ext.md`)
