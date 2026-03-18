@@ -93,12 +93,19 @@ if [ -n "${AUTHOR_EMAIL:-}" ]; then
   fi
 fi
 
+# ─── Build pipeline link ─────────────────────────────────────────────────────
+PIPELINE_LINK=""
+if [ -n "${BITBUCKET_BUILD_NUMBER:-}" ] && [ -n "${BITBUCKET_REPO_FULL_NAME:-}" ]; then
+  PIPELINE_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/pipelines/results/${BITBUCKET_BUILD_NUMBER}"
+  PIPELINE_LINK="<${PIPELINE_URL}|Build #${BITBUCKET_BUILD_NUMBER}>"
+fi
+
 # ─── Build main message payload ───────────────────────────────────────────────
 # The top-level `text` carries the mention (triggers the notification) and is
 # visible above the card. It does not repeat the status — that lives in the
 # Status field with its coloured circle.
 # Fields: Event, Author, Status (with emoji), Context, Commits, Files Changed,
-# and Platform (only for android/ios, omitted for generic).
+# Platform (only for android/ios, omitted for generic), Pipeline (if available).
 MAIN_PAYLOAD=$(jq -n \
   --arg channel "$SLACK_CHANNEL_ID" \
   --arg status_emoji "$STATUS_EMOJI" \
@@ -112,6 +119,7 @@ MAIN_PAYLOAD=$(jq -n \
   --arg commit_range "$COMMIT_RANGE" \
   --arg files_changed "$FILES_CHANGED" \
   --arg platform "$PLATFORM" \
+  --arg pipeline_link "$PIPELINE_LINK" \
   '{
     channel: $channel,
     text: ("Code Review · " + $repo + "\n" + $mention),
@@ -130,6 +138,7 @@ MAIN_PAYLOAD=$(jq -n \
             + (if $commit_range != "" then [{ type: "mrkdwn", text: ("*Commits:*\n" + $commit_range) }] else [] end)
             + (if $files_changed != "" then [{ type: "mrkdwn", text: ("*Files changed:*\n" + $files_changed) }] else [] end)
             + (if $platform != "" and $platform != "generic" then [{ type: "mrkdwn", text: ("*Platform:*\n" + $platform) }] else [] end)
+            + (if $pipeline_link != "" then [{ type: "mrkdwn", text: ("*Pipeline:*\n" + $pipeline_link) }] else [] end)
           )
         }
       ]

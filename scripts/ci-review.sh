@@ -70,6 +70,27 @@ else
   log "Context: Push to branch ${BITBUCKET_BRANCH}"
 fi
 
+# ─── 3b. Skip push pipeline if an open PR exists for this branch ─────────────
+# When a developer pushes to a branch that already has an open PR, Bitbucket
+# triggers both the branches pipeline and the pull-requests pipeline. The PR
+# pipeline posts a richer review (with PR comment), so the push pipeline skips
+# itself to avoid duplicate reviews running simultaneously.
+# If the API call fails for any reason, we proceed with the review rather than
+# silently skipping it.
+if [ "$IS_PR" = false ]; then
+  log "Checking for open PRs on branch ${BITBUCKET_BRANCH}..."
+  OPEN_PR_COUNT=$(curl -s \
+    "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_REPO_FULL_NAME}/pullrequests?state=OPEN&pagelen=50" \
+    -u "${BITBUCKET_USERNAME}:${BITBUCKET_TOKEN}" \
+    | jq --arg branch "${BITBUCKET_BRANCH}" \
+         '[.values[] | select(.source.branch.name == $branch)] | length' \
+    2>/dev/null || echo "0")
+  if [ "${OPEN_PR_COUNT:-0}" -gt 0 ]; then
+    log "Open PR found for branch ${BITBUCKET_BRANCH} — skipping push review (PR pipeline will run)."
+    exit 0
+  fi
+fi
+
 # ─── 4. Resolve commit range (merge-base with default branch) ────────────────
 log "Resolving commit range..."
 
