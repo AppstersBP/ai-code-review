@@ -87,6 +87,8 @@ if [ "$IS_PR" = false ]; then
     2>/dev/null || echo "0")
   if [ "${OPEN_PR_COUNT:-0}" -gt 0 ]; then
     log "Open PR found for branch ${BITBUCKET_BRANCH} — skipping push review (PR pipeline will run)."
+    touch review-output.txt review-raw.json review-stderr.txt
+    echo "0" > review-exit-code.txt
     exit 0
   fi
 fi
