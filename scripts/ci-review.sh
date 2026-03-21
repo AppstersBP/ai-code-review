@@ -12,6 +12,13 @@
 #                           write:pullrequest:bitbucket (mark as secured)
 #   BITBUCKET_USERNAME      Atlassian account email address for API auth
 #
+# Optional repository variables:
+#   REVIEW_WEBHOOK_URL      If set, the full review-raw.json is POSTed here
+#                           after the review completes. Webhook errors are
+#                           logged but never fail the pipeline.
+#   DEFAULT_BRANCH          Override auto-detected default branch
+#   CLAUDE_MAX_TURNS        Max Claude turns per review (default: 30)
+#
 # =============================================================================
 set -euo pipefail
 
@@ -43,6 +50,10 @@ log "Checking required environment variables..."
 # Optional: allow manual override of default branch via repository variable.
 # If not set, it will be auto-detected from the remote.
 MANUAL_DEFAULT_BRANCH="${DEFAULT_BRANCH:-}"
+
+# Optional: if set, the full review-raw.json is POSTed to this URL after the
+# review completes. The pipeline never fails due to webhook errors.
+REVIEW_WEBHOOK_URL="${REVIEW_WEBHOOK_URL:-}"
 
 # ─── 2. Install dependencies ──────────────────────────────────────────────────
 log "Installing dependencies..."
@@ -386,7 +397,22 @@ bash "${SCRIPT_DIR}/post-slack.sh" \
   "${CHANGED_FILES}" \
   "${PLATFORM}" || warn "Failed to send Slack message"
 
-# ─── 12. Exit with correct code ──────────────────────────────────────────────
+# ─── 12. Post raw JSON to webhook (optional) ─────────────────────────────────
+if [ -n "${REVIEW_WEBHOOK_URL}" ]; then
+  log "Posting raw review JSON to webhook..."
+  HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+    --max-time 15 \
+    -X POST "${REVIEW_WEBHOOK_URL}" \
+    -H "Content-Type: application/json" \
+    --data-binary @review-raw.json || echo "000")
+  if [ "${HTTP_STATUS}" -ge 200 ] && [ "${HTTP_STATUS}" -lt 300 ]; then
+    log "Webhook POST succeeded (HTTP ${HTTP_STATUS})"
+  else
+    warn "Webhook POST failed (HTTP ${HTTP_STATUS}) — continuing"
+  fi
+fi
+
+# ─── 13. Exit with correct code ──────────────────────────────────────────────
 if [ "$REVIEW_EXIT" -eq 1 ]; then
   fail "${FAIL_REASON:-Claude failed to produce a review} — failing the build."
 fi
