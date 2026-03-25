@@ -135,6 +135,21 @@ internally and move on — but you must check it.
 - Are there callers or dependents that may now behave differently?
 - Does anything need updating that was not updated (docs, configs, migrations)?
 
+**GraphQL Query Efficiency**
+- For every changed or added GraphQL query or fragment, read the code that consumes the
+  result and check whether every requested field is actually used. Unused fields waste
+  bandwidth and increase parse time on the client.
+- Check nested objects and relations: if only one sub-field of a nested type is accessed,
+  the query should select that sub-field directly rather than the whole object.
+- Check list queries for a missing or overly large `first`/`limit` argument — fetching
+  unbounded or very large lists when only a few items are displayed is a common source of
+  over-fetching.
+- If a query is shared via a fragment, verify that every consumer of the fragment actually
+  uses all the fields it declares. Fragments that grew over time often carry dead fields.
+- Flag over-fetching issues as **Important** when the unused data is substantial (large
+  nested types, lists without limits, or fields fetched on every render). Flag minor
+  unused scalar fields as **Suggestions**.
+
 ---
 
 ## Step 3.5 — Pre-Output Verification
