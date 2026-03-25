@@ -53,23 +53,58 @@ rules to them as described in the Behaviour Rules section below.
 
 ## Step 2 — Explore Context Around Changes
 
-For each changed file, do not review it in isolation. Read the surrounding code:
+This step is **mandatory and must be completed in full** before reviewing. Work through
+each sub-step in order. Do not skip any sub-step, and do not proceed to Step 3 until all
+sub-steps are complete for every changed file.
 
-- Read the **full file** if it is under 500 lines
-- For larger files, read the **full functions or classes** that contain the changes
-- Identify files that **import or call** the changed code and read those too
-- Check **test files** for the changed modules to understand expected behaviour
-- If a database schema, API contract, or config changed, find all places that depend on it
-- Use `grep`, `glob`, and `find` freely to trace dependencies
+**2a — Establish your review scope**
 
-The goal is to understand the change in context, the way a human reviewer would by checking
-out the branch and exploring the codebase — not just reading a diff.
+Write down every file that was added, modified, or deleted (from Step 1). This list is
+your mandatory review scope. You will read every file on it — no exceptions.
+
+**2b — Read every changed file completely**
+
+For each file in your scope:
+- Read the **full file** if it is 600 lines or fewer
+- For larger files, read the **complete functions and classes** containing the changes,
+  plus any functions in the same file that directly call those changed functions
+
+Do not sample, skim, or read only the diff. Read every changed file completely.
+
+**2c — Find and read test files**
+
+For every changed file, search for associated test or spec files:
+
+```bash
+grep -rl "$(basename $FILE)" --include="*test*" --include="*spec*" --include="*Test*" --include="*Spec*"
+```
+
+Read the full contents of every test file you find.
+
+**2d — Trace callers and dependents**
+
+For every function, class, method, or module that was changed, find all files that call
+or import it:
+
+```bash
+grep -rl "FunctionName\|ClassName\|module_name"
+```
+
+Read the relevant sections of every caller you find. If a caller is also in your changed
+file list, you have already read it — skip the duplicate.
+
+**2e — Check contracts and configs**
+
+If any database schema, API contract, public interface, or config file changed, find all
+consumers of that interface and read their relevant sections.
 
 ---
 
 ## Step 3 — Perform the Review
 
-Evaluate the changes across these dimensions:
+Apply **every dimension below** to **every file in your review scope**. Do not skip a
+dimension for any file. If a dimension genuinely does not apply to a file, note that
+internally and move on — but you must check it.
 
 ### Standard Checks
 
@@ -99,6 +134,25 @@ Evaluate the changes across these dimensions:
 - What else could this change affect, based on your dependency exploration?
 - Are there callers or dependents that may now behave differently?
 - Does anything need updating that was not updated (docs, configs, migrations)?
+
+---
+
+## Step 3.5 — Pre-Output Verification
+
+Before writing any output, verify the following. This is not optional.
+
+1. **Every file in your review scope was read** — confirm against your list from Step 2a.
+   If any file was not read, read it now.
+2. **Every dimension in Step 3 was applied to every file** — Correctness, Security,
+   Code Quality, Test Coverage, Impact Assessment. If you skipped a combination, revisit it.
+3. **All findings are captured** — include every issue you noticed, at the appropriate
+   severity level (Critical / Important / Suggestion). Do not omit findings because they
+   seem minor or because you expect the developer will notice them independently.
+
+This review is the authoritative, complete assessment of this commit range. Developers
+expect that fixing all raised issues will result in a clean review on the next run. Any
+issue omitted here will appear as a new finding on the next commit, which undermines trust
+in the review process. Surface everything now.
 
 ---
 
@@ -159,15 +213,20 @@ or a Critical issue found in another author's commits.}
 **Never:**
 - Ask a question or request input of any kind
 - Claim the review is incomplete and stop early
-- Skip the context exploration in Step 2 — always read surrounding code
+- Skip any sub-step of Step 2 — all of 2a through 2e are mandatory
+- Skip applying any Step 3 dimension to any file in scope
 - Flag issues you cannot verify from reading actual code
 - Invent problems to appear thorough
+- Omit a finding because it seems minor — classify it at the right severity and include it
 
 **Always:**
 - Complete the full review even if the diff is large
 - Base every finding on actual code you read, with file and line references
 - Give actionable, specific feedback — not vague warnings
 - If a change looks risky but is correct, note it as a suggestion, not a critical
+- Treat this as the **one authoritative pass** for this commit range. Developers will
+  fix the issues raised here and expect a clean review next time. An issue omitted now
+  will surface as a new finding on their next commit. Surface everything you find, now.
 
 **Multi-author commit ranges:**
 
