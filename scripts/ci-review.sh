@@ -28,6 +28,17 @@ SKILL_DIR="${SCRIPT_DIR}/../skills"
 # shellcheck source=scripts/parse-review.sh
 source "${SCRIPT_DIR}/parse-review.sh"
 
+# ─── 0. Detect CI platform and source provider ────────────────────────────────
+if [ -n "${BITBUCKET_BUILD_NUMBER:-}" ]; then
+  CI_PLATFORM="bitbucket"
+elif [ -n "${GITLAB_CI:-}" ]; then
+  CI_PLATFORM="gitlab"
+else
+  fail "Unsupported CI platform — could not detect Bitbucket or GitLab environment"
+fi
+log "CI platform: ${CI_PLATFORM}"
+source "${SCRIPT_DIR}/providers/${CI_PLATFORM}.sh"
+
 # ─── Colour helpers (only when running locally with a TTY) ───────────────────
 if [ -t 1 ]; then
   RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -44,8 +55,9 @@ log "Checking required environment variables..."
 : "${ANTHROPIC_API_KEY:?Required variable ANTHROPIC_API_KEY is not set}"
 : "${SLACK_BOT_TOKEN:?Required variable SLACK_BOT_TOKEN is not set}"
 : "${SLACK_CHANNEL_ID:?Required variable SLACK_CHANNEL_ID is not set}"
-: "${BITBUCKET_TOKEN:?Required variable BITBUCKET_TOKEN is not set}"
-: "${BITBUCKET_USERNAME:?Required variable BITBUCKET_USERNAME is not set}"
+provider_validate_env
+provider_detect_context
+log "Context: IS_PR=${IS_PR} CI_BRANCH=${CI_BRANCH}"
 
 # Optional: allow manual override of default branch via repository variable.
 # If not set, it will be auto-detected from the remote.
@@ -72,13 +84,11 @@ useradd -m -s /bin/bash reviewer 2>/dev/null || true
 cp "$HOME/.local/bin/claude" /usr/local/bin/claude
 log "Non-root reviewer user ready."
 
-# ─── 3. Detect pipeline context ──────────────────────────────────────────────
-IS_PR=false
-if [ -n "${BITBUCKET_PR_ID:-}" ]; then
-  IS_PR=true
-  log "Context: Pull Request #${BITBUCKET_PR_ID} → ${BITBUCKET_PR_DESTINATION_BRANCH}"
+# ─── 3. Log pipeline context ─────────────────────────────────────────────────
+if [ "$IS_PR" = true ]; then
+  log "Context: Pull Request #${PR_ID} → ${PR_DESTINATION}"
 else
-  log "Context: Push to branch ${BITBUCKET_BRANCH}"
+  log "Context: Push to branch ${CI_BRANCH}"
 fi
 
 # ─── 3b. Skip push pipeline if an open PR exists for this branch ─────────────
@@ -89,15 +99,10 @@ fi
 # If the API call fails for any reason, we proceed with the review rather than
 # silently skipping it.
 if [ "$IS_PR" = false ]; then
-  log "Checking for open PRs on branch ${BITBUCKET_BRANCH}..."
-  OPEN_PR_COUNT=$(curl -s \
-    "https://api.bitbucket.org/2.0/repositories/${BITBUCKET_REPO_FULL_NAME}/pullrequests?state=OPEN&pagelen=50" \
-    -u "${BITBUCKET_USERNAME}:${BITBUCKET_TOKEN}" \
-    | jq --arg branch "${BITBUCKET_BRANCH}" \
-         '[.values[] | select(.source.branch.name == $branch)] | length' \
-    2>/dev/null || echo "0")
+  log "Checking for open PRs on branch ${CI_BRANCH}..."
+  OPEN_PR_COUNT=$(provider_check_open_pr "${CI_BRANCH}" 2>/dev/null || echo "0")
   if [ "${OPEN_PR_COUNT:-0}" -gt 0 ]; then
-    log "Open PR found for branch ${BITBUCKET_BRANCH} — skipping push review (PR pipeline will run)."
+    log "Open PR found for branch ${CI_BRANCH} — skipping push review (PR pipeline will run)."
     touch review-output.txt review-raw.json review-stderr.txt
     echo "0" > review-exit-code.txt
     exit 0
@@ -111,10 +116,7 @@ log "Resolving commit range..."
 # authentication proxy is only configured for BITBUCKET_GIT_HTTP_ORIGIN
 # (https://...).  Reset the remote so subsequent fetches go through the
 # authenticated proxy and succeed.
-if [ -n "${BITBUCKET_GIT_HTTP_ORIGIN:-}" ]; then
-  git remote set-url origin "$BITBUCKET_GIT_HTTP_ORIGIN" 2>/dev/null || true
-  log "Remote URL set to BITBUCKET_GIT_HTTP_ORIGIN for authenticated fetches"
-fi
+provider_fix_remote_url
 
 HEAD_SHA=$(git rev-parse HEAD)
 
@@ -141,7 +143,7 @@ if [ "$IS_PR" = true ]; then
   # Fetch full history (no --depth) so the merge-base is always reachable.
   # Use FETCH_HEAD — a depth clone sets a single-branch refspec so fetching
   # another branch does not create origin/<branch>.
-  DEST_BRANCH="${BITBUCKET_PR_DESTINATION_BRANCH:-main}"
+  DEST_BRANCH="${PR_DESTINATION:-main}"
   git fetch origin "${DEST_BRANCH}" 2>/dev/null || true
   _merge_base_via_fetch_head "PR vs ${DEST_BRANCH}"
 
@@ -166,7 +168,7 @@ else
     fi
   fi
 
-  if [ "${BITBUCKET_BRANCH:-}" = "$DEFAULT_BRANCH" ]; then
+  if [ "${CI_BRANCH}" = "$DEFAULT_BRANCH" ]; then
     # Pushing directly to the default branch (e.g. a merge commit landing on
     # master). merge-base(HEAD, fetch(master)) would equal HEAD itself,
     # producing an empty range. Use HEAD^1 instead: for a merge commit that is
@@ -247,7 +249,7 @@ fi
 AUTHOR_NAME=$(git log -1 --format="%an" "${HEAD_SHA}")
 AUTHOR_EMAIL=$(git log -1 --format="%ae" "${HEAD_SHA}")
 COMMIT_MSG=$(git log -1 --format="%s" "${HEAD_SHA}")
-REPO_NAME=$(basename "${BITBUCKET_REPO_FULL_NAME:-unknown-repo}")
+REPO_NAME="${CI_REPO_SLUG}"
 
 log "Author: ${AUTHOR_NAME} <${AUTHOR_EMAIL}>"
 
@@ -259,8 +261,8 @@ Do not ask any questions. Complete the full review and output only the structure
 review in the format specified by the skill.
 
 CONTEXT:
-- Repository: ${BITBUCKET_REPO_FULL_NAME:-unknown}
-- Branch: ${BITBUCKET_BRANCH:-unknown}
+- Repository: ${CI_REPO_FULL_NAME:-unknown}
+- Branch: ${CI_BRANCH:-unknown}
 - Platform: ${PLATFORM}
 - Commit range: BASE_SHA=${BASE_SHA} HEAD_SHA=${HEAD_SHA}
 - Primary author name: ${AUTHOR_NAME}
@@ -271,8 +273,8 @@ CONTEXT:
   defined in the skill instructions below.
 
 $(if [ "$IS_PR" = true ]; then
-  echo "- This is Pull Request #${BITBUCKET_PR_ID}: ${BITBUCKET_PR_DESTINATION_BRANCH} ← ${BITBUCKET_BRANCH}"
-  echo "- PR Title: ${BITBUCKET_PR_TITLE:-}"
+  echo "- This is Pull Request #${PR_ID}: ${PR_DESTINATION} ← ${CI_BRANCH}"
+  echo "- PR Title: ${PR_TITLE:-}"
 fi)
 
 ---
@@ -376,26 +378,34 @@ if has_critical_findings "$REVIEW"; then
 fi
 echo "$REVIEW_EXIT" > review-exit-code.txt
 
-# ─── 10. Post to Bitbucket PR (if PR context) ────────────────────────────────
+# ─── 10. Post PR comment (if PR context) ─────────────────────────────────────
 if [ "$IS_PR" = true ]; then
   log "Posting review as PR comment..."
-  bash "${SCRIPT_DIR}/post-pr-comment.sh" "${REVIEW}" || warn "Failed to post PR comment"
+  provider_post_pr_comment "${REVIEW}" || warn "Failed to post PR comment"
 fi
 
 # ─── 11. Post to Slack ────────────────────────────────────────────────────────
 log "Sending Slack notification..."
+COMPARE_URL=""
+if [ "$IS_PR" = false ]; then
+  COMPARE_URL="$(provider_compare_url "${BASE_SHA:0:8}" "${HEAD_SHA:0:8}")"
+fi
 bash "${SCRIPT_DIR}/post-slack.sh" \
   "${REVIEW}" \
   "${IS_PR}" \
   "${AUTHOR_NAME}" \
   "${AUTHOR_EMAIL}" \
   "${REPO_NAME}" \
-  "${BITBUCKET_BRANCH:-unknown}" \
+  "${CI_BRANCH}" \
   "${HEAD_SHA:0:8}" \
   "${REVIEW_EXIT}" \
   "${BASE_SHA:0:8}..${HEAD_SHA:0:8}" \
   "${CHANGED_FILES}" \
-  "${PLATFORM}" || warn "Failed to send Slack message"
+  "${PLATFORM}" \
+  "${PR_URL:-}" \
+  "${PIPELINE_URL:-}" \
+  "${COMPARE_URL}" \
+  "${PR_ID:-}" || warn "Failed to send Slack message"
 
 # ─── 12. Post raw JSON to webhook (optional) ─────────────────────────────────
 if [ -n "${REVIEW_WEBHOOK_URL}" ]; then
