@@ -116,7 +116,7 @@ minimal. To pin to a specific Claude version instead of `latest`, see
 [Versioning / Pinning](#versioning--pinning).
 
 > **Installing Claude at runtime instead:** If you prefer not to use the pre-built image,
-> replace the `image` with `node:20-slim` and add
+> replace the `image` with `node:22-slim` and add
 > `apt-get update -qq && apt-get install -y -qq git` as the first `script` line.
 > `ci-review.sh` will install the remaining dependencies (curl, jq, Claude) on every run.
 
@@ -183,7 +183,7 @@ To pin to a specific Claude version instead of `latest`, see
 [Versioning / Pinning](#versioning--pinning).
 
 > **Installing Claude at runtime instead:** If you prefer not to use the pre-built image,
-> replace the `image` with `node:20-slim` and add
+> replace the `image` with `node:22-slim` and add
 > `apt-get update -qq && apt-get install -y -qq git` as the first `script` line.
 > `ci-review.sh` will install the remaining dependencies (curl, jq, Claude) on every run.
 

@@ -1,4 +1,4 @@
-FROM node:20-slim
+FROM node:22-slim
 
 RUN apt-get update -qq && apt-get install -y -qq git curl jq \
  && curl -fsSL https://claude.ai/install.sh | bash \
