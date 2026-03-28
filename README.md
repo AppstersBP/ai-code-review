@@ -91,10 +91,10 @@ definitions:
           - git clone --depth=1 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
           - bash .ai-code-review/scripts/ci-review.sh
         artifacts:
-          - review-output.txt
-          - review-exit-code.txt
-          - review-raw.json
-          - review-stderr.txt
+          - review-output.txt    # human-readable review text
+          - review-exit-code.txt # 0 = pass, 1 = critical issues found
+          - review-raw.json      # full Claude JSON output (usage stats, raw result)
+          - review-stderr.txt    # Claude stderr for debugging failures
 
 pipelines:
   pull-requests:
@@ -167,10 +167,10 @@ code-review:
     - bash .ai-code-review/scripts/ci-review.sh
   artifacts:
     paths:
-      - review-output.txt
-      - review-exit-code.txt
-      - review-raw.json
-      - review-stderr.txt
+      - review-output.txt    # human-readable review text
+      - review-exit-code.txt # 0 = pass, 1 = critical issues found
+      - review-raw.json      # full Claude JSON output (usage stats, raw result)
+      - review-stderr.txt    # Claude stderr for debugging failures
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
