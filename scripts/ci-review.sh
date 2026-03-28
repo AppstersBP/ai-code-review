@@ -8,9 +8,8 @@
 #   ANTHROPIC_API_KEY       Your Anthropic API key (mark as secured)
 #   SLACK_BOT_TOKEN         Slack bot OAuth token (xoxb-...) (mark as secured)
 #   SLACK_CHANNEL_ID        ID of the private Slack channel (e.g. C01234ABCDE)
-#   BITBUCKET_TOKEN         Bitbucket API token (starts with ATAT) with scope
-#                           write:pullrequest:bitbucket (mark as secured)
-#   BITBUCKET_USERNAME      Atlassian account email address for API auth
+#   (Provider-specific variables are validated by the sourced provider.
+#    See scripts/providers/bitbucket.sh or scripts/providers/gitlab.sh.)
 #
 # Optional repository variables:
 #   REVIEW_WEBHOOK_URL      If set, the full review-raw.json is POSTed here
@@ -28,17 +27,6 @@ SKILL_DIR="${SCRIPT_DIR}/../skills"
 # shellcheck source=scripts/parse-review.sh
 source "${SCRIPT_DIR}/parse-review.sh"
 
-# ─── 0. Detect CI platform and source provider ────────────────────────────────
-if [ -n "${BITBUCKET_BUILD_NUMBER:-}" ]; then
-  CI_PLATFORM="bitbucket"
-elif [ -n "${GITLAB_CI:-}" ]; then
-  CI_PLATFORM="gitlab"
-else
-  fail "Unsupported CI platform — could not detect Bitbucket or GitLab environment"
-fi
-log "CI platform: ${CI_PLATFORM}"
-source "${SCRIPT_DIR}/providers/${CI_PLATFORM}.sh"
-
 # ─── Colour helpers (only when running locally with a TTY) ───────────────────
 if [ -t 1 ]; then
   RED='\033[0;31m'; YELLOW='\033[1;33m'; GREEN='\033[0;32m'; NC='\033[0m'
@@ -49,6 +37,17 @@ fi
 log()  { echo "[ci-review] $*"; }
 warn() { echo -e "${YELLOW}[ci-review] WARNING: $*${NC}"; }
 fail() { echo -e "${RED}[ci-review] ERROR: $*${NC}" >&2; exit 1; }
+
+# ─── 0. Detect CI platform and source provider ────────────────────────────────
+if [ -n "${BITBUCKET_BUILD_NUMBER:-}" ]; then
+  CI_PLATFORM="bitbucket"
+elif [ -n "${GITLAB_CI:-}" ]; then
+  CI_PLATFORM="gitlab"
+else
+  fail "Unsupported CI platform — could not detect Bitbucket or GitLab environment"
+fi
+log "CI platform: ${CI_PLATFORM}"
+source "${SCRIPT_DIR}/providers/${CI_PLATFORM}.sh"
 
 # ─── 1. Validate required environment ────────────────────────────────────────
 log "Checking required environment variables..."
@@ -112,10 +111,6 @@ fi
 # ─── 4. Resolve commit range (merge-base with default branch) ────────────────
 log "Resolving commit range..."
 
-# Bitbucket rewrites the remote URL to a plain http:// address, but its
-# authentication proxy is only configured for BITBUCKET_GIT_HTTP_ORIGIN
-# (https://...).  Reset the remote so subsequent fetches go through the
-# authenticated proxy and succeed.
 provider_fix_remote_url
 
 HEAD_SHA=$(git rev-parse HEAD)
@@ -149,8 +144,7 @@ if [ "$IS_PR" = true ]; then
 
 else
   # Push mode: find the default branch, then choose the right base strategy.
-  # This is reliable and platform-agnostic — no dependency on
-  # BITBUCKET_PREVIOUS_COMMIT, which Bitbucket does not always set.
+  # This is reliable and platform-agnostic.
 
   if [ -n "${MANUAL_DEFAULT_BRANCH}" ]; then
     DEFAULT_BRANCH="${MANUAL_DEFAULT_BRANCH}"
