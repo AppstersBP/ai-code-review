@@ -43,7 +43,7 @@ check "PR_DESTINATION is main"     true   [ "$PR_DESTINATION" = "main" ]
 check "PR_TITLE is My PR"          true   [ "$PR_TITLE" = "My PR" ]
 check "CI_BRANCH is feature/test"  true   [ "$CI_BRANCH" = "feature/test" ]
 check "CI_REPO_SLUG is myrepo"     true   [ "$CI_REPO_SLUG" = "myrepo" ]
-check "PR_URL contains /42"        true   echo "$PR_URL" | grep -q "/42"
+check "PR_URL contains /42"        true   bash -c "echo '$PR_URL' | grep -q '/42'"
 check "PIPELINE_URL is set"        true   [ -n "$PIPELINE_URL" ]
 
 # ─── provider_detect_context — push context ───────────────────────────────────
