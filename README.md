@@ -51,25 +51,6 @@ ai-code-review/
 
 ---
 
-## Create a Slack App
-
-This step is the same regardless of your CI platform.
-
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → From scratch
-2. Name it `Claude Code Reviewer`, pick your workspace
-3. Go to **OAuth & Permissions** → **Bot Token Scopes**, add:
-   - `chat:write`
-   - `chat:write.public` (only needed for public channels)
-   - `users:read.email` — allows the bot to look up a Slack user by the commit
-     author's email address and mention them directly. Without this scope the
-     bot falls back to `@here` instead of a personal mention.
-4. Click **Install to Workspace**
-5. Copy the **Bot User OAuth Token** (`xoxb-...`)
-6. Invite the bot to your channel: `/invite @Claude Code Reviewer`
-7. Copy the **Channel ID** from the channel's details (starts with `C`)
-
----
-
 ## Setting Up with Bitbucket Pipelines
 
 ### 1. Add the pipeline step
@@ -139,8 +120,8 @@ In Bitbucket: **Repository settings** → **Repository variables**
 | Variable | Value | Secured | Required |
 |----------|-------|---------|---------|
 | `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes | Yes |
-| `SLACK_BOT_TOKEN` | `xoxb-...` from Slack setup | ✅ Yes | Yes |
-| `SLACK_CHANNEL_ID` | Channel ID from Slack setup | No | Yes |
+| `SLACK_BOT_TOKEN` | `xoxb-...` from the Slack App setup below | ✅ Yes | Yes |
+| `SLACK_CHANNEL_ID` | Channel ID from the Slack App setup below | No | Yes |
 | `BITBUCKET_TOKEN` | API token from step 2 (starts with `ATAT`) | ✅ Yes | Yes |
 | `BITBUCKET_USERNAME` | Your Atlassian **account email address** | No | Yes |
 | `DEFAULT_BRANCH` | e.g. `develop` — overrides auto-detection of the default branch | No | No |
@@ -191,8 +172,8 @@ GitLab project → **Settings** → **CI/CD** → **Variables**:
 | Variable | Value | Masked | Required |
 |----------|-------|--------|---------|
 | `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes | Yes |
-| `SLACK_BOT_TOKEN` | `xoxb-...` from Slack setup | ✅ Yes | Yes |
-| `SLACK_CHANNEL_ID` | Channel ID from Slack setup | No | Yes |
+| `SLACK_BOT_TOKEN` | `xoxb-...` from the Slack App setup below | ✅ Yes | Yes |
+| `SLACK_CHANNEL_ID` | Channel ID from the Slack App setup below | No | Yes |
 | `GITLAB_TOKEN` | Personal/project access token | ✅ Yes | No — `CI_JOB_TOKEN` is used by default and is sufficient for all required operations |
 | `GITLAB_API_URL` | e.g. `https://gitlab.example.com/api/v4` | No | No — only for self-hosted GitLab |
 | `DEFAULT_BRANCH` | e.g. `develop` | No | No |
@@ -202,6 +183,25 @@ GitLab project → **Settings** → **CI/CD** → **Variables**:
 > sufficient permissions to list open MRs and post MR comments on the same project.
 > You only need `GITLAB_TOKEN` if your self-hosted instance has restricted job token
 > API access policies.
+
+---
+
+## Create a Slack App
+
+This step is the same regardless of your CI platform.
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → From scratch
+2. Name it `Claude Code Reviewer`, pick your workspace
+3. Go to **OAuth & Permissions** → **Bot Token Scopes**, add:
+   - `chat:write`
+   - `chat:write.public` (only needed for public channels)
+   - `users:read.email` — allows the bot to look up a Slack user by the commit
+     author's email address and mention them directly. Without this scope the
+     bot falls back to `@here` instead of a personal mention.
+4. Click **Install to Workspace**
+5. Copy the **Bot User OAuth Token** (`xoxb-...`)
+6. Invite the bot to your channel: `/invite @Claude Code Reviewer`
+7. Copy the **Channel ID** from the channel's details (starts with `C`)
 
 ---
 
