@@ -13,7 +13,7 @@ on pull requests. Fails the build on Critical findings.
 Push or PR event
        │
        ▼
-bitbucket-pipelines.yml
+bitbucket-pipelines.yml / .gitlab-ci.yml
   git clone AppstersBP/ai-code-review
   bash .ai-code-review/scripts/ci-review.sh
        │
@@ -23,14 +23,14 @@ bitbucket-pipelines.yml
        ├─ Appends .claude/skills/*.ext.md if present in the project repo
        ├─ Runs Claude Code headlessly against the diff
        ├─ Posts result to Slack (always)
-       ├─ Posts result as PR comment (PR events only)
+       ├─ Posts result as PR/MR comment (PR/MR events only)
        └─ Exits 1 if Critical issues found, 0 otherwise
 ```
 
-| Event | Commit range reviewed | PR comment | Slack |
-|-------|-----------------------|------------|-------|
+| Event | Commit range reviewed | PR/MR comment | Slack |
+|-------|-----------------------|---------------|-------|
 | Push to any branch | `merge-base(HEAD, default-branch)..HEAD` | No | Yes |
-| Pull Request opened / updated | `merge-base(HEAD, destination)..HEAD` | Yes | Yes |
+| Pull/Merge Request opened / updated | `merge-base(HEAD, destination)..HEAD` | Yes | Yes |
 
 ---
 
@@ -51,7 +51,26 @@ ai-code-review/
 
 ---
 
-## Adding to a Repository
+## Create a Slack App
+
+This step is the same regardless of your CI platform.
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → From scratch
+2. Name it `Claude Code Reviewer`, pick your workspace
+3. Go to **OAuth & Permissions** → **Bot Token Scopes**, add:
+   - `chat:write`
+   - `chat:write.public` (only needed for public channels)
+   - `users:read.email` — allows the bot to look up a Slack user by the commit
+     author's email address and mention them directly. Without this scope the
+     bot falls back to `@here` instead of a personal mention.
+4. Click **Install to Workspace**
+5. Copy the **Bot User OAuth Token** (`xoxb-...`)
+6. Invite the bot to your channel: `/invite @Claude Code Reviewer`
+7. Copy the **Channel ID** from the channel's details (starts with `C`)
+
+---
+
+## Setting Up with Bitbucket Pipelines
 
 ### 1. Add the pipeline step
 
@@ -89,22 +108,7 @@ pipelines:
 That's all the code you need in the project repo. Everything else comes from this
 shared repository.
 
-### 2. Create a Slack App
-
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) → **Create New App** → From scratch
-2. Name it `Claude Code Reviewer`, pick your workspace
-3. Go to **OAuth & Permissions** → **Bot Token Scopes**, add:
-   - `chat:write`
-   - `chat:write.public` (only needed for public channels)
-   - `users:read.email` — allows the bot to look up a Slack user by the commit
-     author's email address and mention them directly. Without this scope the
-     bot falls back to `@here` instead of a personal mention.
-4. Click **Install to Workspace**
-5. Copy the **Bot User OAuth Token** (`xoxb-...`)
-6. Invite the bot to your channel: `/invite @Claude Code Reviewer`
-7. Copy the **Channel ID** from the channel's details (starts with `C`)
-
-### 3. Create a Bitbucket API Token
+### 2. Create a Bitbucket API Token
 
 App passwords were deprecated on September 9, 2025 and will stop working on June 9, 2026.
 Use an API token instead.
@@ -119,19 +123,67 @@ Use an API token instead.
 > **Rotation reminder:** API tokens expire. Set a calendar reminder before the expiry
 > date to rotate the token and update the `BITBUCKET_TOKEN` repository variable.
 
-### 4. Set Repository Variables
+### 3. Set Repository Variables
 
 In Bitbucket: **Repository settings** → **Repository variables**
 
 | Variable | Value | Secured | Required |
 |----------|-------|---------|---------|
 | `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes | Yes |
-| `SLACK_BOT_TOKEN` | `xoxb-...` from step 2 | ✅ Yes | Yes |
-| `SLACK_CHANNEL_ID` | Channel ID from step 2 | No | Yes |
-| `BITBUCKET_TOKEN` | API token from step 3 (starts with `ATAT`) | ✅ Yes | Yes |
+| `SLACK_BOT_TOKEN` | `xoxb-...` from Slack setup | ✅ Yes | Yes |
+| `SLACK_CHANNEL_ID` | Channel ID from Slack setup | No | Yes |
+| `BITBUCKET_TOKEN` | API token from step 2 (starts with `ATAT`) | ✅ Yes | Yes |
 | `BITBUCKET_USERNAME` | Your Atlassian **account email address** | No | Yes |
 | `DEFAULT_BRANCH` | e.g. `develop` — overrides auto-detection of the default branch | No | No |
 | `CLAUDE_MAX_TURNS` | Maximum Claude turns per review (default `30`). Increase for large diffs; decrease to cap spend. | No | No |
+
+---
+
+## Setting Up with GitLab CI
+
+### 1. Add the pipeline job
+
+In your `.gitlab-ci.yml`:
+
+```yaml
+code-review:
+  image: node:20-slim
+  script:
+    - apt-get update -qq && apt-get install -y -qq git curl jq
+    # Pin to a release tag once you start tagging (--branch v1.0.0)
+    - git clone --depth=1 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
+    - bash .ai-code-review/scripts/ci-review.sh
+  artifacts:
+    paths:
+      - review-output.txt
+      - review-exit-code.txt
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+```
+
+The `rules` block means the job runs on both MR pipelines (which post an MR comment) and
+plain branch pushes (which post to Slack only). The deduplication logic skips the push
+pipeline automatically when an MR pipeline is already running for the same branch.
+
+### 2. Set CI/CD Variables
+
+GitLab project → **Settings** → **CI/CD** → **Variables**:
+
+| Variable | Value | Masked | Required |
+|----------|-------|--------|---------|
+| `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes | Yes |
+| `SLACK_BOT_TOKEN` | `xoxb-...` from Slack setup | ✅ Yes | Yes |
+| `SLACK_CHANNEL_ID` | Channel ID from Slack setup | No | Yes |
+| `GITLAB_TOKEN` | Personal/project access token | ✅ Yes | No — `CI_JOB_TOKEN` is used by default and is sufficient for all required operations |
+| `GITLAB_API_URL` | e.g. `https://gitlab.example.com/api/v4` | No | No — only for self-hosted GitLab |
+| `DEFAULT_BRANCH` | e.g. `develop` | No | No |
+| `CLAUDE_MAX_TURNS` | e.g. `30` | No | No |
+
+> **`CI_JOB_TOKEN` is injected automatically** by GitLab CI into every job. It has
+> sufficient permissions to list open MRs and post MR comments on the same project.
+> You only need `GITLAB_TOKEN` if your self-hosted instance has restricted job token
+> API access policies.
 
 ---
 
@@ -196,7 +248,7 @@ Extension files work for any skill. To extend the generic skill, create
 The pipeline exits with code **1** (failing the build) when the review output contains a
 `🔴 Critical` section with at least one finding.
 
-Slack and PR comment notifications are always sent **before** the exit, so developers
+Slack and PR/MR comment notifications are always sent **before** the exit, so developers
 are never left wondering why the build is red.
 
 To make reviews informational-only (never fail the build), comment out the last block
@@ -213,7 +265,7 @@ in `scripts/ci-review.sh`:
 ## Review Output Format
 
 Claude outputs a structured Markdown review that is posted verbatim to Slack and as a
-PR comment. The `**Platform:**` field is included by the mobile skill only.
+PR/MR comment. The `**Platform:**` field is included by the mobile skill only.
 
 ```
 ## 🔍 Code Review — {short SHA}
@@ -276,63 +328,11 @@ change in this repo silently affect every project's CI.
 
 ---
 
-## Using with GitLab CI
-
-### 1. Add the pipeline job
-
-In your `.gitlab-ci.yml`:
-
-```yaml
-code-review:
-  image: node:20-slim
-  script:
-    - apt-get update -qq && apt-get install -y -qq git curl jq
-    # Pin to a release tag once you start tagging (--branch v1.0.0)
-    - git clone --depth=1 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
-    - bash .ai-code-review/scripts/ci-review.sh
-  artifacts:
-    paths:
-      - review-output.txt
-      - review-exit-code.txt
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_COMMIT_BRANCH
-```
-
-The `rules` block means the job runs on both MR pipelines (which post an MR comment) and
-plain branch pushes (which post to Slack only). The deduplication logic skips the push
-pipeline automatically when an MR pipeline is already running for the same branch.
-
-### 2. Create a Slack App
-
-Same as for Bitbucket — follow [steps 2 from above](#2-create-a-slack-app).
-
-### 3. Set CI/CD Variables
-
-GitLab project → **Settings** → **CI/CD** → **Variables**:
-
-| Variable | Value | Masked | Required |
-|----------|-------|--------|---------|
-| `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes | Yes |
-| `SLACK_BOT_TOKEN` | `xoxb-...` from Slack setup | ✅ Yes | Yes |
-| `SLACK_CHANNEL_ID` | Channel ID from Slack setup | No | Yes |
-| `GITLAB_TOKEN` | Personal/project access token | ✅ Yes | No — `CI_JOB_TOKEN` is used by default and is sufficient for all required operations |
-| `GITLAB_API_URL` | e.g. `https://gitlab.example.com/api/v4` | No | No — only for self-hosted GitLab |
-| `DEFAULT_BRANCH` | e.g. `develop` | No | No |
-| `CLAUDE_MAX_TURNS` | e.g. `30` | No | No |
-
-> **`CI_JOB_TOKEN` is injected automatically** by GitLab CI into every job. It has
-> sufficient permissions to list open MRs and post MR comments on the same project.
-> You only need `GITLAB_TOKEN` if your self-hosted instance has restricted job token
-> API access policies.
-
----
-
 ## Troubleshooting
 
 **"Claude Code installation failed"**
 The `curl -fsSL https://claude.ai/install.sh | bash` step failed. Check network access
-from the Bitbucket runner. To avoid installing Claude on every run, pre-bake it into a
+from the CI runner. To avoid installing Claude on every run, pre-bake it into a
 custom Docker image and set it as the pipeline `image`.
 
 **"Skill file not found"**
@@ -340,9 +340,13 @@ The clone succeeded but the skill path is wrong — usually caused by cloning in
 different directory than `.ai-code-review`. Check the `git clone` target and the
 `bash ... /ci-review.sh` path in your pipeline step.
 
-**PR comment not appearing**
-Verify `BITBUCKET_USERNAME` and `BITBUCKET_TOKEN` are correct and the App Password has
-`Pull requests: Write` scope.
+**PR/MR comment not appearing (Bitbucket)**
+Verify `BITBUCKET_USERNAME` and `BITBUCKET_TOKEN` are correct and the API token has
+`write:pullrequest:bitbucket` scope.
+
+**MR comment not appearing (GitLab)**
+By default `CI_JOB_TOKEN` is used. If your instance has restricted job token API access
+policies, set `GITLAB_TOKEN` to a personal or project access token with `api` scope.
 
 **Slack message fails with `channel_not_found`**
 The bot has not been invited to the channel. Run `/invite @Claude Code Reviewer` in Slack.
