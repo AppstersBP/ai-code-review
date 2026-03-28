@@ -67,20 +67,22 @@ MANUAL_DEFAULT_BRANCH="${DEFAULT_BRANCH:-}"
 REVIEW_WEBHOOK_URL="${REVIEW_WEBHOOK_URL:-}"
 
 # ─── 2. Install dependencies ──────────────────────────────────────────────────
-log "Installing dependencies..."
-apt-get update -qq && apt-get install -y -qq curl jq
+if ! command -v claude &>/dev/null; then
+  log "Installing dependencies..."
+  apt-get update -qq && apt-get install -y -qq curl jq
+  curl -fsSL https://claude.ai/install.sh | bash
+  export PATH="$HOME/.local/bin:$PATH"
+  # Make claude available system-wide for the non-root reviewer user
+  cp "$HOME/.local/bin/claude" /usr/local/bin/claude
+else
+  log "Claude $(claude --version) already installed, skipping install."
+fi
 
-# Install Claude Code CLI
-curl -fsSL https://claude.ai/install.sh | bash
-export PATH="$HOME/.local/bin:$PATH"
-
-# Verify installation
 claude --version || fail "Claude Code installation failed"
 
 # --dangerously-skip-permissions is blocked when running as root.
 # Create a non-root user and make claude available to it.
 useradd -m -s /bin/bash reviewer 2>/dev/null || true
-cp "$HOME/.local/bin/claude" /usr/local/bin/claude
 log "Non-root reviewer user ready."
 
 # ─── 3. Log pipeline context ─────────────────────────────────────────────────
