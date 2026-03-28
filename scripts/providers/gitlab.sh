@@ -60,8 +60,10 @@ provider_check_open_pr() {
   local auth_header
   auth_header="$(_gitlab_auth_header)"
 
-  curl -s \
-    "${api_url}?state=opened&source_branch=${branch}" \
+  curl -s --get \
+    --data-urlencode "state=opened" \
+    --data-urlencode "source_branch=${branch}" \
+    "${api_url}" \
     -H "${auth_header}" \
     | jq 'length' \
     2>/dev/null || echo "0"
