@@ -1,0 +1,37 @@
+name: Build CI image
+
+on:
+  push:
+    branches: [main]
+    paths: [Dockerfile]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build image
+        run: docker build -t ai-code-review:local .
+
+      - name: Extract Claude version
+        id: meta
+        run: |
+          version=$(docker run --rm ai-code-review:local claude --version | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          echo "tag=claude-${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Tag and push
+        run: |
+          docker tag ai-code-review:local ghcr.io/appstersbp/ai-code-review:${{ steps.meta.outputs.tag }}
+          docker tag ai-code-review:local ghcr.io/appstersbp/ai-code-review:latest
+          docker push ghcr.io/appstersbp/ai-code-review:${{ steps.meta.outputs.tag }}
+          docker push ghcr.io/appstersbp/ai-code-review:latest

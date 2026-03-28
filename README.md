@@ -77,15 +77,13 @@ This step is the same regardless of your CI platform.
 In your `bitbucket-pipelines.yml`:
 
 ```yaml
-image: node:20-slim   # or whatever base image you use
+image: ghcr.io/appstersbp/ai-code-review:latest
 
 definitions:
   steps:
     - step: &code-review
         name: "Claude Code Review"
         script:
-          # Pin to a release tag once you start tagging (--branch v1.0.0)
-          - apt-get update -qq && apt-get install -y -qq git
           - git clone --depth=1 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
           - bash .ai-code-review/scripts/ci-review.sh
         artifacts:
@@ -109,6 +107,15 @@ pipelines:
 
 That's all the code you need in the project repo. Everything else comes from this
 shared repository.
+
+The pre-built image includes Claude and all dependencies so the pipeline step stays
+minimal. To pin to a specific Claude version instead of `latest`, see
+[Versioning / Pinning](#versioning--pinning).
+
+> **Installing Claude at runtime instead:** If you prefer not to use the pre-built image,
+> replace the `image` with `node:20-slim` and add
+> `apt-get update -qq && apt-get install -y -qq git` as the first `script` line.
+> `ci-review.sh` will install the remaining dependencies (curl, jq, Claude) on every run.
 
 ### 2. Create a Bitbucket API Token
 
@@ -149,10 +156,8 @@ In your `.gitlab-ci.yml`:
 
 ```yaml
 code-review:
-  image: node:20-slim
+  image: ghcr.io/appstersbp/ai-code-review:latest
   script:
-    - apt-get update -qq && apt-get install -y -qq git curl jq
-    # Pin to a release tag once you start tagging (--branch v1.0.0)
     - git clone --depth=1 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
     - bash .ai-code-review/scripts/ci-review.sh
   artifacts:
@@ -169,6 +174,15 @@ code-review:
 The `rules` block means the job runs on both MR pipelines (which post an MR comment) and
 plain branch pushes (which post to Slack only). The deduplication logic skips the push
 pipeline automatically when an MR pipeline is already running for the same branch.
+
+The pre-built image includes Claude and all dependencies so no install step is needed.
+To pin to a specific Claude version instead of `latest`, see
+[Versioning / Pinning](#versioning--pinning).
+
+> **Installing Claude at runtime instead:** If you prefer not to use the pre-built image,
+> replace the `image` with `node:20-slim` and add
+> `apt-get update -qq && apt-get install -y -qq git` as the first `script` line.
+> `ci-review.sh` will install the remaining dependencies (curl, jq, Claude) on every run.
 
 ### 2. Set CI/CD Variables
 
@@ -301,15 +315,30 @@ APPROVED | APPROVED WITH SUGGESTIONS | CHANGES REQUESTED
 
 ## Versioning / Pinning
 
-By default the pipeline clones `main`. Once you start tagging releases, pin to a tag for
-reproducible, auditable runs across all projects:
+The pre-built image is tagged with the version of Claude it contains (e.g.
+`claude-1.2.3`), published to GitHub Container Registry. The review scripts are always
+cloned from `main` — there are no repository version tags.
 
+A new image is built automatically whenever the `Dockerfile` changes, and can also be
+triggered manually via the GitHub Actions workflow dispatch to pick up a new Claude
+release.
+
+To pin a project to a specific Claude version, replace `latest` with the version tag:
+
+**Bitbucket** — in `bitbucket-pipelines.yml`:
 ```yaml
-- git clone --depth=1 --branch v1.2.0 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
+image: ghcr.io/appstersbp/ai-code-review:claude-1.2.3
 ```
 
-This means you consciously opt in to updates by bumping the tag, rather than having a
-change in this repo silently affect every project's CI.
+**GitLab** — in `.gitlab-ci.yml`:
+```yaml
+code-review:
+  image: ghcr.io/appstersbp/ai-code-review:claude-1.2.3
+```
+
+The `git clone` line in the `script` block stays as-is (always clones `main`).
+Pinning the image gives you a stable Claude version while still picking up any script
+or skill updates merged to `main`.
 
 ---
 
@@ -336,8 +365,8 @@ change in this repo silently affect every project's CI.
 
 **"Claude Code installation failed"**
 The `curl -fsSL https://claude.ai/install.sh | bash` step failed. Check network access
-from the CI runner. To avoid installing Claude on every run, pre-bake it into a
-custom Docker image and set it as the pipeline `image`.
+from the CI runner. To avoid installing Claude on every run, use the pre-baked image
+(`ghcr.io/appstersbp/ai-code-review:latest`) — see **Versioning / Pinning** above.
 
 **"Skill file not found"**
 The clone succeeded but the skill path is wrong — usually caused by cloning into a
