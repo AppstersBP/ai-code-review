@@ -7,6 +7,28 @@ on pull requests. Fails the build on Critical findings.
 
 ---
 
+## Contents
+
+- [How It Works](#how-it-works)
+- [Repository Structure](#repository-structure)
+- [Setting Up with Bitbucket Pipelines](#setting-up-with-bitbucket-pipelines)
+  - [1. Add the pipeline step](#1-add-the-pipeline-step)
+  - [2. Create a Bitbucket API Token](#2-create-a-bitbucket-api-token)
+  - [3. Set Repository Variables](#3-set-repository-variables)
+- [Setting Up with GitLab CI](#setting-up-with-gitlab-ci)
+  - [1. Add the pipeline job](#1-add-the-pipeline-job)
+  - [2. Set CI/CD Variables](#2-set-cicd-variables)
+- [Create a Slack App](#create-a-slack-app)
+- [Platform Detection](#platform-detection)
+- [Extending Skills for a Specific Project](#extending-skills-for-a-specific-project)
+- [Build Failure Behaviour](#build-failure-behaviour)
+- [Review Output Format](#review-output-format)
+- [Versioning / Pinning](#versioning--pinning)
+- [Tuning](#tuning)
+- [Troubleshooting](#troubleshooting)
+
+---
+
 ## How It Works
 
 ```
