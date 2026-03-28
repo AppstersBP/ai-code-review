@@ -1,0 +1,16 @@
+{
+  "pagelen": 10,
+  "values": [
+    {
+      "id": 42,
+      "source": {
+        "branch": {
+          "name": "feature/my-branch"
+        }
+      },
+      "state": "OPEN",
+      "title": "My PR"
+    }
+  ],
+  "size": 1
+}
