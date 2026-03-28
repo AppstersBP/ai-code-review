@@ -1,8 +1,8 @@
 # ai-code-review
 
-Shared AI code review tooling for Bitbucket Pipelines, powered by
-[Claude Code](https://claude.ai/code). Drops into any repository with two lines in
-`bitbucket-pipelines.yml`. Posts reviews to Slack on every push and as PR comments
+Shared AI code review tooling for Bitbucket Pipelines and GitLab CI, powered by
+[Claude Code](https://claude.ai/code). Drops into any repository with a few lines of
+pipeline config. Posts reviews to Slack on every push and as PR/MR comments
 on pull requests. Fails the build on Critical findings.
 
 ---
@@ -42,9 +42,11 @@ ai-code-review/
 │   ├── ci-code-review.md           # Generic review skill
 │   └── ci-code-review-mobile.md    # Android + iOS review skill
 └── scripts/
-    ├── ci-review.sh                # Main orchestration script
-    ├── post-pr-comment.sh          # Posts review to Bitbucket PR
-    └── post-slack.sh               # Posts review to Slack channel
+    ├── ci-review.sh                # Main orchestration script (auto-detects platform)
+    ├── post-slack.sh               # Posts review to Slack channel
+    └── providers/
+        ├── bitbucket.sh            # Bitbucket Pipelines integration
+        └── gitlab.sh               # GitLab CI integration
 ```
 
 ---
@@ -271,6 +273,58 @@ change in this repo silently affect every project's CI.
 > `### 🔴 Critical` and `### 🟡 Important`. If you rename or remove these headings
 > the build-failure logic and Slack severity detection will stop working.
 > Cosmetic changes (wording, extra fields, reordering sections below Strengths) are safe.
+
+---
+
+## Using with GitLab CI
+
+### 1. Add the pipeline job
+
+In your `.gitlab-ci.yml`:
+
+```yaml
+code-review:
+  image: node:20-slim
+  script:
+    - apt-get update -qq && apt-get install -y -qq git curl jq
+    # Pin to a release tag once you start tagging (--branch v1.0.0)
+    - git clone --depth=1 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
+    - bash .ai-code-review/scripts/ci-review.sh
+  artifacts:
+    paths:
+      - review-output.txt
+      - review-exit-code.txt
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH
+```
+
+The `rules` block means the job runs on both MR pipelines (which post an MR comment) and
+plain branch pushes (which post to Slack only). The deduplication logic skips the push
+pipeline automatically when an MR pipeline is already running for the same branch.
+
+### 2. Create a Slack App
+
+Same as for Bitbucket — follow [steps 2 from above](#2-create-a-slack-app).
+
+### 3. Set CI/CD Variables
+
+GitLab project → **Settings** → **CI/CD** → **Variables**:
+
+| Variable | Value | Masked | Required |
+|----------|-------|--------|---------|
+| `ANTHROPIC_API_KEY` | Your Anthropic API key | ✅ Yes | Yes |
+| `SLACK_BOT_TOKEN` | `xoxb-...` from Slack setup | ✅ Yes | Yes |
+| `SLACK_CHANNEL_ID` | Channel ID from Slack setup | No | Yes |
+| `GITLAB_TOKEN` | Personal/project access token | ✅ Yes | No — `CI_JOB_TOKEN` is used by default and is sufficient for all required operations |
+| `GITLAB_API_URL` | e.g. `https://gitlab.example.com/api/v4` | No | No — only for self-hosted GitLab |
+| `DEFAULT_BRANCH` | e.g. `develop` | No | No |
+| `CLAUDE_MAX_TURNS` | e.g. `30` | No | No |
+
+> **`CI_JOB_TOKEN` is injected automatically** by GitLab CI into every job. It has
+> sufficient permissions to list open MRs and post MR comments on the same project.
+> You only need `GITLAB_TOKEN` if your self-hosted instance has restricted job token
+> API access policies.
 
 ---
 
