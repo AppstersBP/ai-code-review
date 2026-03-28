@@ -91,6 +91,8 @@ definitions:
         artifacts:
           - review-output.txt
           - review-exit-code.txt
+          - review-raw.json
+          - review-stderr.txt
 
 pipelines:
   pull-requests:
@@ -157,6 +159,8 @@ code-review:
     paths:
       - review-output.txt
       - review-exit-code.txt
+      - review-raw.json
+      - review-stderr.txt
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH
