@@ -86,6 +86,7 @@ definitions:
   steps:
     - step: &code-review
         name: "Claude Code Review"
+        max-time: 15
         script:
           - git clone --depth=1 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
           - bash .ai-code-review/scripts/ci-review.sh
@@ -160,6 +161,7 @@ In your `.gitlab-ci.yml`:
 ```yaml
 code-review:
   image: ghcr.io/appstersbp/ai-code-review:latest
+  timeout: 15 minutes
   script:
     - git clone --depth=1 https://github.com/AppstersBP/ai-code-review.git .ai-code-review
     - bash .ai-code-review/scripts/ci-review.sh
