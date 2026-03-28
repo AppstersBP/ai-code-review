@@ -14,12 +14,14 @@
 #     "<exit code: 0|1>" \
 #     "<commit range, e.g. abc1234..def5678>" \
 #     "<files changed count>" \
-#     "<platform: android|ios|generic>"
+#     "<platform: android|ios|generic>" \
+#     "<pr_url (if PR, else empty)>" \
+#     "<pipeline_url (or empty)>" \
+#     "<compare_url (if push, else empty)>" \
+#     "<pr_id (if PR, else empty)>"
 #
 # Required env vars:
 #   SLACK_BOT_TOKEN, SLACK_CHANNEL_ID
-#   BITBUCKET_REPO_FULL_NAME, BITBUCKET_PR_ID (if PR)
-#   BITBUCKET_WORKSPACE, BITBUCKET_REPO_SLUG
 # =============================================================================
 set -euo pipefail
 
@@ -38,6 +40,10 @@ REVIEW_EXIT="${8:-0}"
 COMMIT_RANGE="${9:-}"
 FILES_CHANGED="${10:-}"
 PLATFORM="${11:-generic}"
+PR_URL="${12:-}"
+PIPELINE_URL_ARG="${13:-}"
+COMPARE_URL="${14:-}"
+PR_ID="${15:-}"
 
 # ─── Determine status emoji and colour ───────────────────────────────────────
 if [ "$REVIEW_EXIT" -eq 1 ]; then
@@ -56,21 +62,13 @@ fi
 
 # ─── Build context line ───────────────────────────────────────────────────────
 if [ "$IS_PR" = true ]; then
-  PR_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/pull-requests/${BITBUCKET_PR_ID}"
-  CONTEXT_LINE="PR #${BITBUCKET_PR_ID} — <${PR_URL}|View Pull Request>"
+  CONTEXT_LINE="PR #${PR_ID} — <${PR_URL}|View Pull Request>"
   EVENT_TYPE="Pull Request"
 else
-  # For a range of commits, link to Bitbucket's compare view so all changes
-  # are visible at once. The %0D separator is Bitbucket's compare URL format.
-  # Fall back to a single-commit link if no range is available.
-  if [ -n "$COMMIT_RANGE" ]; then
-    BASE_SHA_SHORT="${COMMIT_RANGE%..*}"
-    HEAD_SHA_SHORT="${COMMIT_RANGE#*..}"
-    COMPARE_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/branches/compare/${HEAD_SHA_SHORT}%0D${BASE_SHA_SHORT}#diff"
+  if [ -n "$COMPARE_URL" ]; then
     CONTEXT_LINE="Branch \`${BRANCH}\` — <${COMPARE_URL}|${COMMIT_RANGE}>"
   else
-    COMMIT_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/commits/${SHORT_SHA}"
-    CONTEXT_LINE="Branch \`${BRANCH}\` — <${COMMIT_URL}|View Commit ${SHORT_SHA}>"
+    CONTEXT_LINE="Branch \`${BRANCH}\` — ${SHORT_SHA}"
   fi
   EVENT_TYPE="Push"
 fi
@@ -95,9 +93,8 @@ fi
 
 # ─── Build pipeline link ─────────────────────────────────────────────────────
 PIPELINE_LINK=""
-if [ -n "${BITBUCKET_BUILD_NUMBER:-}" ] && [ -n "${BITBUCKET_REPO_FULL_NAME:-}" ]; then
-  PIPELINE_URL="https://bitbucket.org/${BITBUCKET_REPO_FULL_NAME}/pipelines/results/${BITBUCKET_BUILD_NUMBER}"
-  PIPELINE_LINK="<${PIPELINE_URL}|Build #${BITBUCKET_BUILD_NUMBER}>"
+if [ -n "${PIPELINE_URL_ARG}" ]; then
+  PIPELINE_LINK="<${PIPELINE_URL_ARG}|View Pipeline>"
 fi
 
 # ─── Build main message payload ───────────────────────────────────────────────
