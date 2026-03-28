@@ -1,0 +1,9 @@
+[
+  {
+    "id": 101,
+    "iid": 7,
+    "source_branch": "feature/my-branch",
+    "state": "opened",
+    "title": "My MR"
+  }
+]
