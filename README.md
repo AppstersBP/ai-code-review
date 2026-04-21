@@ -149,6 +149,8 @@ In Bitbucket: **Repository settings** → **Repository variables**
 | `BITBUCKET_USERNAME` | Your Atlassian **account email address** | No | Yes |
 | `DEFAULT_BRANCH` | e.g. `develop` — overrides auto-detection of the default branch | No | No |
 | `CLAUDE_MAX_TURNS` | Maximum Claude turns per review (default `30`). Increase for large diffs; decrease to cap spend. | No | No |
+| `CLAUDE_EFFORT` | Effort level for the review: `low`, `medium`, `high`, `xhigh`, or `max` (default: Claude CLI default) | No | No |
+| `CLAUDE_MODEL` | Model to use: alias (`haiku`, `sonnet`, `opus`) or full ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) (default: Claude CLI default) | No | No |
 
 ---
 
@@ -202,6 +204,8 @@ GitLab project → **Settings** → **CI/CD** → **Variables**:
 | `GITLAB_API_URL` | e.g. `https://gitlab.example.com/api/v4` | No | No — only for self-hosted GitLab |
 | `DEFAULT_BRANCH` | e.g. `develop` | No | No |
 | `CLAUDE_MAX_TURNS` | e.g. `30` | No | No |
+| `CLAUDE_EFFORT` | e.g. `high` | No | No |
+| `CLAUDE_MODEL` | e.g. `claude-opus-4-7` | No | No |
 
 > **`CI_JOB_TOKEN` is injected automatically** by GitLab CI into every job. It has
 > sufficient permissions to list open MRs and post MR comments on the same project.
@@ -371,6 +375,8 @@ or skill updates merged to `main`.
 | Goal | What to change |
 |------|----------------|
 | More thorough review on large diffs | Set the `CLAUDE_MAX_TURNS` repository variable (default `30`) |
+| Adjust Claude's thinking budget | Set `CLAUDE_EFFORT` to `low`, `medium`, `high`, `xhigh`, or `max` |
+| Pin a specific Claude model | Set `CLAUDE_MODEL` to an alias (`haiku`, `sonnet`, `opus`) or a full model ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) |
 | Cap per-review spend | Add `--max-budget-usd 2.00` to the `claude` invocation in `ci-review.sh` |
 | Force a specific skill regardless of platform | Set `SKILL_FILE` manually before the skill-selection block in `ci-review.sh` |
 | Add project-specific rules | Create `.claude/skills/<skill-name>.ext.md` in the project repo |
