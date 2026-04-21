@@ -17,6 +17,12 @@
 #                           logged but never fail the pipeline.
 #   DEFAULT_BRANCH          Override auto-detected default branch
 #   CLAUDE_MAX_TURNS        Max Claude turns per review (default: 30)
+#   CLAUDE_EFFORT           Effort level passed to Claude Code: low|medium|high|xhigh|max
+#                           (default: Claude CLI default)
+#   CLAUDE_MODEL            Model alias (haiku|sonnet|opus) or full model ID
+#                           (e.g. claude-opus-4-7, claude-sonnet-4-6,
+#                           claude-haiku-4-5-20251001)
+#                           (default: Claude CLI default)
 #
 # =============================================================================
 set -euo pipefail
@@ -293,26 +299,41 @@ chown reviewer "$APIKEY_FILE" "$PROMPT_FILE"
 MAX_TURNS="${CLAUDE_MAX_TURNS:-30}"
 log "Max turns: ${MAX_TURNS}"
 
+# Optional: effort level and model override for the Claude invocation.
+# When unset the flag is omitted entirely and Claude uses its own default.
+EFFORT="${CLAUDE_EFFORT:-}"
+MODEL="${CLAUDE_MODEL:-}"
+[ -n "$EFFORT" ] && log "Effort: ${EFFORT}"
+[ -n "$MODEL" ]  && log "Model: ${MODEL}"
+
 # Runner script executed as the non-root reviewer user.
 # git requires safe.directory when the repo is owned by a different user.
 # $1 = api key env file, $2 = build dir, $3 = prompt file, $4 = max turns
+# $5 = effort (optional), $6 = model (optional)
 BUILD_DIR="$(pwd)"
 RUNNER=$(mktemp /tmp/runner.XXXXXX.sh)
+# Single-quoted delimiter: no expansion at write time; $1-$6 refer to the runner's own args.
 cat > "$RUNNER" << 'RUNNER_EOF'
 #!/bin/bash
 set -a; source "$1"; set +a
 export HOME=/home/reviewer
 git config --global --add safe.directory "$2" 2>/dev/null || true
+EFFORT_ARGS=(); [ -n "$5" ] && EFFORT_ARGS=(--effort "$5")
+MODEL_ARGS=();  [ -n "$6" ] && MODEL_ARGS=(--model  "$6")
 claude -p "$(cat "$3")" \
   --allowedTools 'Bash(git *)' 'Read' 'Grep' 'Glob' \
   --dangerously-skip-permissions \
   --max-turns "$4" \
+  "${EFFORT_ARGS[@]}" \
+  "${MODEL_ARGS[@]}" \
   --output-format json
 RUNNER_EOF
 chmod 755 "$RUNNER"
 chown reviewer "$RUNNER"
 
-su -s /bin/bash reviewer -c "$RUNNER $APIKEY_FILE $BUILD_DIR $PROMPT_FILE $MAX_TURNS" \
+EFFORT_Q=$(printf '%q' "$EFFORT")
+MODEL_Q=$(printf '%q' "$MODEL")
+su -s /bin/bash reviewer -c "$RUNNER $APIKEY_FILE $BUILD_DIR $PROMPT_FILE $MAX_TURNS $EFFORT_Q $MODEL_Q" \
   > review-raw.json 2>review-stderr.txt || true
 
 rm -f "$RUNNER" "$PROMPT_FILE" "$APIKEY_FILE"
