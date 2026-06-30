@@ -146,7 +146,7 @@ for combo in "${COMBOS[@]}"; do
 
   if [[ -s "$raw_file" ]]; then
     COSTS[$label]=$(jq -r '.total_cost_usd // empty' "$raw_file" 2>/dev/null \
-      | awk '{printf "$%.4f", $1}' || echo "—")
+      | LC_NUMERIC=C awk '{printf "$%.4f", $1}' || echo "—")
     ACTUAL_MODELS[$label]=$(jq -r '.model // "—"' "$raw_file" 2>/dev/null || echo "—")
   else
     COSTS[$label]="—"

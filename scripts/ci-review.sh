@@ -390,7 +390,7 @@ else
   CLAUDE_MODEL=$(jq -r '.model                        // ""' review-raw.json)
 
   log "Token usage — input: ${INPUT_TOKENS} | cache_read: ${CACHE_READ} | cache_write: ${CACHE_WRITE} | output: ${OUTPUT_TOKENS}"
-  log "Estimated cost: \$$(printf '%.4f' "${COST}")"
+  log "Estimated cost: \$$(LC_NUMERIC=C printf '%.4f' "${COST}")"
 
   if [ -z "$REVIEW_TEXT" ]; then
     warn "Claude returned JSON but .result is empty (turn limit reached or API error)"
