@@ -89,9 +89,14 @@ fi
 claude --version || fail "Claude Code installation failed"
 
 # --dangerously-skip-permissions is blocked when running as root.
-# Create a non-root user and make claude available to it.
-useradd -m -s /bin/bash reviewer 2>/dev/null || true
-log "Non-root reviewer user ready."
+# In CI (Docker, root): create a non-root reviewer user and su to it.
+# Locally (non-root): run Claude directly as the current user.
+if [ "$(id -u)" -eq 0 ]; then
+  useradd -m -s /bin/bash reviewer 2>/dev/null || true
+  log "Non-root reviewer user ready."
+else
+  log "Running as non-root user — skipping reviewer user setup."
+fi
 
 # ─── 3. Log pipeline context ─────────────────────────────────────────────────
 if [ "$IS_PR" = true ]; then
@@ -302,7 +307,7 @@ printf '%s' "$PROMPT" > "$PROMPT_FILE"
 APIKEY_FILE=$(mktemp /tmp/.apikey.XXXXXX)
 printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > "$APIKEY_FILE"
 chmod 600 "$APIKEY_FILE"
-chown reviewer "$APIKEY_FILE" "$PROMPT_FILE"
+[ "$(id -u)" -eq 0 ] && chown reviewer "$APIKEY_FILE" "$PROMPT_FILE"
 
 # Optional: allow the number of Claude turns to be tuned via a repository
 # variable. Higher values give more thorough reviews on large diffs but
@@ -327,7 +332,7 @@ RUNNER=$(mktemp /tmp/runner.XXXXXX.sh)
 cat > "$RUNNER" << 'RUNNER_EOF'
 #!/bin/bash
 set -a; source "$1"; set +a
-export HOME=/home/reviewer
+[ -d "/home/reviewer" ] && export HOME=/home/reviewer
 git config --global --add safe.directory "$2" 2>/dev/null || true
 EFFORT_ARGS=(); [ -n "$5" ] && EFFORT_ARGS=(--effort "$5")
 MODEL_ARGS=();  [ -n "$6" ] && MODEL_ARGS=(--model  "$6")
@@ -340,12 +345,17 @@ claude -p "$(cat "$3")" \
   --output-format json
 RUNNER_EOF
 chmod 755 "$RUNNER"
-chown reviewer "$RUNNER"
 
 EFFORT_Q=$(printf '%q' "$EFFORT")
 MODEL_Q=$(printf '%q' "$MODEL")
-su -s /bin/bash reviewer -c "$RUNNER $APIKEY_FILE $BUILD_DIR $PROMPT_FILE $MAX_TURNS $EFFORT_Q $MODEL_Q" \
-  > review-raw.json 2>review-stderr.txt || true
+if [ "$(id -u)" -eq 0 ]; then
+  chown reviewer "$RUNNER"
+  su -s /bin/bash reviewer -c "$RUNNER $APIKEY_FILE $BUILD_DIR $PROMPT_FILE $MAX_TURNS $EFFORT_Q $MODEL_Q" \
+    > review-raw.json 2>review-stderr.txt || true
+else
+  bash "$RUNNER" "$APIKEY_FILE" "$BUILD_DIR" "$PROMPT_FILE" "$MAX_TURNS" "$EFFORT_Q" "$MODEL_Q" \
+    > review-raw.json 2>review-stderr.txt || true
+fi
 
 rm -f "$RUNNER" "$PROMPT_FILE" "$APIKEY_FILE"
 
