@@ -123,6 +123,7 @@ MAIN_PAYLOAD=$(jq -n \
   --arg files_changed "$FILES_CHANGED" \
   --arg platform "$PLATFORM" \
   --arg pipeline_link "$PIPELINE_LINK" \
+  --arg branch "$BRANCH" \
   --arg claude_model "$CLAUDE_MODEL" \
   '{
     channel: $channel,
@@ -135,6 +136,7 @@ MAIN_PAYLOAD=$(jq -n \
           fields: (
             [
               { type: "mrkdwn", text: ("*Event:*\n" + $event_type) },
+              { type: "mrkdwn", text: ("*Branch:*\n`" + $branch + "`") },
               { type: "mrkdwn", text: ("*Author:*\n" + $author) },
               { type: "mrkdwn", text: ("*Status:*\n" + $status_emoji + " " + $status_text) },
               { type: "mrkdwn", text: ("*Context:*\n" + $context_line) }

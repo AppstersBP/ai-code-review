@@ -309,7 +309,7 @@ Output a structured review using exactly this format. Do not add any conversatio
 text before or after it. This output will be posted directly to Slack or as a PR comment.
 
 ```
-## 🔍 Code Review — {HEAD_SHA_SHORT}
+## 🔍 Code Review — {BRANCH_NAME} @ {HEAD_SHA_SHORT}
 
 **Commits reviewed:** {BASE_SHA_SHORT}..{HEAD_SHA_SHORT}
 **Files changed:** {N}
