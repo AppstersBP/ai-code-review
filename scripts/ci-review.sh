@@ -387,7 +387,7 @@ else
   CACHE_READ=$(jq -r  '.usage.cache_read_input_tokens // 0' review-raw.json)
   CACHE_WRITE=$(jq -r '.usage.cache_creation_input_tokens // 0' review-raw.json)
   COST=$(jq -r        '.total_cost_usd                // 0' review-raw.json)
-  CLAUDE_MODEL=$(jq -r '.model                        // ""' review-raw.json)
+  CLAUDE_MODEL=$(jq -r '.modelUsage | keys[0] // ""' review-raw.json)
 
   log "Token usage — input: ${INPUT_TOKENS} | cache_read: ${CACHE_READ} | cache_write: ${CACHE_WRITE} | output: ${OUTPUT_TOKENS}"
   log "Estimated cost: \$$(LC_NUMERIC=C printf '%.4f' "${COST}")"

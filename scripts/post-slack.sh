@@ -124,6 +124,7 @@ MAIN_PAYLOAD=$(jq -n \
   --arg platform "$PLATFORM" \
   --arg pipeline_link "$PIPELINE_LINK" \
   --arg branch "$BRANCH" \
+  --arg is_pr "$IS_PR" \
   --arg claude_model "$CLAUDE_MODEL" \
   '{
     channel: $channel,
@@ -136,11 +137,11 @@ MAIN_PAYLOAD=$(jq -n \
           fields: (
             [
               { type: "mrkdwn", text: ("*Event:*\n" + $event_type) },
-              { type: "mrkdwn", text: ("*Branch:*\n`" + $branch + "`") },
               { type: "mrkdwn", text: ("*Author:*\n" + $author) },
               { type: "mrkdwn", text: ("*Status:*\n" + $status_emoji + " " + $status_text) },
               { type: "mrkdwn", text: ("*Context:*\n" + $context_line) }
             ]
+            + (if $is_pr == "true" then [{ type: "mrkdwn", text: ("*Branch:*\n`" + $branch + "`") }] else [] end)
             + (if $commit_range != "" then [{ type: "mrkdwn", text: ("*Commits:*\n" + $commit_range) }] else [] end)
             + (if $files_changed != "" then [{ type: "mrkdwn", text: ("*Files changed:*\n" + $files_changed) }] else [] end)
             + (if $platform != "" and $platform != "generic" then [{ type: "mrkdwn", text: ("*Platform:*\n" + $platform) }] else [] end)
