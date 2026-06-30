@@ -44,6 +44,7 @@ PR_URL="${12:-}"
 PIPELINE_URL_ARG="${13:-}"
 COMPARE_URL="${14:-}"
 PR_ID="${15:-}"
+CLAUDE_MODEL="${16:-}"
 
 # ─── Determine status emoji and colour ───────────────────────────────────────
 if [ "$REVIEW_EXIT" -eq 1 ]; then
@@ -117,6 +118,7 @@ MAIN_PAYLOAD=$(jq -n \
   --arg files_changed "$FILES_CHANGED" \
   --arg platform "$PLATFORM" \
   --arg pipeline_link "$PIPELINE_LINK" \
+  --arg claude_model "$CLAUDE_MODEL" \
   '{
     channel: $channel,
     text: ("Code Review · " + $repo + "\n" + $mention),
@@ -136,6 +138,7 @@ MAIN_PAYLOAD=$(jq -n \
             + (if $files_changed != "" then [{ type: "mrkdwn", text: ("*Files changed:*\n" + $files_changed) }] else [] end)
             + (if $platform != "" and $platform != "generic" then [{ type: "mrkdwn", text: ("*Platform:*\n" + $platform) }] else [] end)
             + (if $pipeline_link != "" then [{ type: "mrkdwn", text: ("*Pipeline:*\n" + $pipeline_link) }] else [] end)
+            + (if $claude_model != "" then [{ type: "mrkdwn", text: ("*Model:*\n" + $claude_model) }] else [] end)
           )
         }
       ]
