@@ -21,6 +21,9 @@ on pull requests. Fails the build on Critical findings.
 - [Create a Slack App](#create-a-slack-app)
 - [Platform Detection](#platform-detection)
 - [Extending Skills for a Specific Project](#extending-skills-for-a-specific-project)
+- [Local Testing](#local-testing)
+  - [Single run — local-review.sh](#single-run--local-reviewsh)
+  - [Benchmarking — bench.sh](#benchmarking--benchsh)
 - [Build Failure Behaviour](#build-failure-behaviour)
 - [Review Output Format](#review-output-format)
 - [Versioning / Pinning](#versioning--pinning)
@@ -66,6 +69,9 @@ ai-code-review/
 └── scripts/
     ├── ci-review.sh                # Main orchestration script (auto-detects platform)
     ├── post-slack.sh               # Posts review to Slack channel
+    ├── parse-review.sh             # Detects finding severity in review output
+    ├── local-review.sh             # Run a single review locally without CI
+    ├── bench.sh                    # Benchmark multiple model/effort combinations locally
     └── providers/
         ├── bitbucket.sh            # Bitbucket Pipelines integration
         └── gitlab.sh               # GitLab CI integration
@@ -289,6 +295,113 @@ Extension files work for any skill. To extend the generic skill, create
 
 ---
 
+## Local Testing
+
+The two scripts below let you run reviews locally against any commit range in any project,
+using the same pipeline logic as CI. No Slack token is required — Slack is automatically
+skipped in local mode.
+
+**Prerequisites:** `ANTHROPIC_API_KEY` must be set in the environment. Claude CLI must be
+installed (`npm install -g @anthropic-ai/claude-code`) or available on `$PATH`.
+
+### Single run — local-review.sh
+
+Runs a single review against an explicit commit range and writes the same four artifact
+files that the CI pipeline produces.
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... bash scripts/local-review.sh \
+  --project /path/to/your-repo \
+  --base    <base-sha> \
+  --head    <head-sha> \
+  [--model  haiku|sonnet|opus|<full-model-id>] \
+  [--effort low|medium|high|xhigh|max] \
+  [--out    /path/to/output-dir]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--project` | Path to the repository to review (**required**) |
+| `--base` | Base commit SHA — changes from this commit onwards are reviewed (**required**) |
+| `--head` | Head commit SHA — last commit to include (**required**) |
+| `--model` | Override the Claude model for this run |
+| `--effort` | Override the effort level for this run |
+| `--out` | Directory to write output files (default: current directory) |
+
+Output files written to `--out`:
+
+| File | Contents |
+|------|----------|
+| `review-output.txt` | Human-readable review text |
+| `review-raw.json` | Full Claude JSON (usage stats, cost, resolved model name) |
+| `review-exit-code.txt` | `0` = pass, `1` = Critical issues found |
+| `review-stderr.txt` | Claude stderr — useful for debugging failures |
+
+To override `CLAUDE_MAX_TURNS` for a single run, prefix the command:
+
+```bash
+ANTHROPIC_API_KEY=... CLAUDE_MAX_TURNS=50 bash scripts/local-review.sh ...
+```
+
+### Benchmarking — bench.sh
+
+Runs the same commit range through multiple model/effort combinations and produces a
+`summary.md` with a metrics table and an AI-generated comparative commentary. Useful for
+deciding which model and effort level to set as the default for a codebase.
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... bash scripts/bench.sh \
+  --project   /path/to/your-repo \
+  --base      <base-sha> \
+  --head      <head-sha> \
+  --matrix    "haiku:low,haiku:high,sonnet:medium,sonnet:high,opus:max" \
+  [--out                ./bench-results] \
+  [--commentary-model   sonnet] \
+  [--commentary-effort  high]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--project` | Path to the repository to review (**required**) |
+| `--base` | Base commit SHA (**required**) |
+| `--head` | Head commit SHA (**required**) |
+| `--matrix` | Comma-separated `model:effort` pairs to run (**required**) |
+| `--out` | Root output directory (default: `./bench-results`) |
+| `--commentary-model` | Model used to generate the comparative commentary (default: `sonnet`) |
+| `--commentary-effort` | Effort level for the commentary (default: `high`) |
+
+Output layout:
+
+```
+bench-results/
+└── your-repo/
+    └── abc12345..def67890/
+        ├── haiku-low/
+        │   ├── review-output.txt
+        │   ├── review-raw.json
+        │   ├── review-exit-code.txt
+        │   └── review-stderr.txt
+        ├── sonnet-high/
+        │   └── ...
+        └── summary.md          ← metrics table + AI commentary
+```
+
+The `summary.md` contains:
+
+- A table comparing all combinations: resolved model name, verdict, finding counts
+  (🔴 Critical / 🟡 Important / 🟢 Suggestions), estimated cost, and wall-clock time.
+- An AI-generated commentary covering: high-confidence findings (flagged by multiple
+  combinations), divergent findings (caught by some but not others), false positive
+  candidates, quality-vs-cost assessment, and a final recommendation.
+
+To override `CLAUDE_MAX_TURNS` for all combinations in a bench run:
+
+```bash
+ANTHROPIC_API_KEY=... CLAUDE_MAX_TURNS=50 bash scripts/bench.sh ...
+```
+
+---
+
 ## Build Failure Behaviour
 
 The pipeline exits with code **1** (failing the build) when the review output contains a
@@ -314,7 +427,7 @@ Claude outputs a structured Markdown review that is posted verbatim to Slack and
 PR/MR comment. The `**Platform:**` field is included by the mobile skill only.
 
 ```
-## 🔍 Code Review — {short SHA}
+## 🔍 Code Review — {branch} @ {short SHA}
 
 **Commits reviewed:** {base}..{head}
 **Files changed:** {N}
