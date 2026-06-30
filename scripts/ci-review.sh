@@ -356,6 +356,12 @@ else
     REVIEW_EXIT=1
     FAIL_REASON="Claude returned no review content"
   else
+    # Strip any preamble text Claude may emit before the structured review heading.
+    REVIEW_TEXT=$(printf '%s' "$REVIEW_TEXT" | awk '/^## 🔍/{found=1} found{print}')
+    if [ -z "$REVIEW_TEXT" ]; then
+      warn "Could not find '## 🔍' heading in Claude output — using raw output"
+      REVIEW_TEXT=$(jq -r '.result // ""' review-raw.json)
+    fi
     echo "$REVIEW_TEXT" > review-output.txt
   fi
 fi
