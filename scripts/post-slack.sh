@@ -25,6 +25,11 @@
 # =============================================================================
 set -euo pipefail
 
+if [ "${SKIP_SLACK:-}" = "1" ]; then
+  echo "[post-slack] SKIP_SLACK=1 — skipping Slack notification"
+  exit 0
+fi
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=scripts/parse-review.sh
 source "${SCRIPT_DIR}/parse-review.sh"

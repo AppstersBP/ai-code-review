@@ -58,8 +58,10 @@ source "${SCRIPT_DIR}/providers/${CI_PLATFORM}.sh"
 # ─── 1. Validate required environment ────────────────────────────────────────
 log "Checking required environment variables..."
 : "${ANTHROPIC_API_KEY:?Required variable ANTHROPIC_API_KEY is not set}"
-: "${SLACK_BOT_TOKEN:?Required variable SLACK_BOT_TOKEN is not set}"
-: "${SLACK_CHANNEL_ID:?Required variable SLACK_CHANNEL_ID is not set}"
+if [ "${SKIP_SLACK:-}" != "1" ]; then
+  : "${SLACK_BOT_TOKEN:?Required variable SLACK_BOT_TOKEN is not set}"
+  : "${SLACK_CHANNEL_ID:?Required variable SLACK_CHANNEL_ID is not set}"
+fi
 provider_validate_env
 provider_detect_context
 log "Context: IS_PR=${IS_PR} CI_BRANCH=${CI_BRANCH}"
@@ -118,6 +120,14 @@ fi
 
 # ─── 4. Resolve commit range (merge-base with default branch) ────────────────
 log "Resolving commit range..."
+
+# Optional: explicit range override used by local-review.sh.
+# When set, skips all fetch/merge-base logic entirely.
+if [ -n "${BASE_SHA_OVERRIDE:-}" ]; then
+  BASE_SHA="${BASE_SHA_OVERRIDE}"
+  HEAD_SHA="${HEAD_SHA_OVERRIDE:-$(git rev-parse HEAD)}"
+  log "Commit range overridden: ${BASE_SHA:0:8}..${HEAD_SHA:0:8}"
+else
 
 provider_fix_remote_url
 
@@ -194,7 +204,8 @@ else
       warn "Could not fetch default branch — falling back to HEAD~1"
     fi
   fi
-fi
+fi # end IS_PR/push branch selection
+fi # end BASE_SHA_OVERRIDE bypass
 
 if [ "$BASE_SHA" = "$HEAD_SHA" ]; then
   log "No changes detected between $BASE_SHA and $HEAD_SHA. Skipping review."
