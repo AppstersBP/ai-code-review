@@ -204,8 +204,8 @@ GitLab project → **Settings** → **CI/CD** → **Variables**:
 | `GITLAB_API_URL` | e.g. `https://gitlab.example.com/api/v4` | No | No — only for self-hosted GitLab |
 | `DEFAULT_BRANCH` | e.g. `develop` | No | No |
 | `CLAUDE_MAX_TURNS` | e.g. `30` | No | No |
-| `CLAUDE_EFFORT` | e.g. `high` | No | No |
-| `CLAUDE_MODEL` | e.g. `claude-opus-4-7` | No | No |
+| `CLAUDE_EFFORT` | Effort level for the review: `low`, `medium`, `high`, `xhigh`, or `max` (default: Claude CLI default) | No | No |
+| `CLAUDE_MODEL` | Model to use: alias (`haiku`, `sonnet`, `opus`) or full ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) (default: Claude CLI default) | No | No |
 
 > **`CI_JOB_TOKEN` is injected automatically** by GitLab CI into every job. It has
 > sufficient permissions to list open MRs and post MR comments on the same project.
