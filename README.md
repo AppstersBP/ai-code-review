@@ -498,12 +498,18 @@ or skill updates merged to `main`.
 | Change the output format | Edit the skill file's Step 4 section — **note constraints below** |
 | Forward review data to an external system | Set `REVIEW_WEBHOOK_URL` — the full Claude JSON is POSTed there after every review |
 
+> **Model displayed in Slack:** Claude internally uses a lightweight model for orchestration
+> even when a heavier model is configured via `CLAUDE_MODEL`. The raw JSON therefore contains
+> a `modelUsage` object with one entry per model that was invoked, each with its own token
+> counts and cost. The model shown in the Slack header is the one with the highest spend —
+> that is always the model that produced the actual review content. If you see a model name
+> that differs from what you set in `CLAUDE_MODEL`, the alias was resolved to a full model ID
+> by the Claude CLI (e.g. `sonnet` → `claude-sonnet-5`).
+
 > **Webhook payload:** the body is the raw Claude JSON (`review-raw.json`). It contains
-> `result` (the review text), `total_cost_usd`, `usage` (token counts), and `modelUsage`
-> (per-model token and cost breakdown). Claude internally uses a lightweight model for
-> orchestration alongside the configured review model; the Slack header shows the model
-> with the highest spend, which is the one that produced the review. Consumers of the
-> webhook can apply the same logic: `modelUsage | to_entries | max_by(.value.costUSD) | .key`.
+> `result` (the review text), `total_cost_usd`, `usage` (aggregate token counts), and
+> `modelUsage` (per-model breakdown). To extract the primary model name from the payload,
+> use: `modelUsage | to_entries | max_by(.value.costUSD) | .key`.
 
 > **Output format constraints:** `ci-review.sh` runs Claude with `--output-format json`
 > and extracts the review text from the `.result` field. `parse-review.sh` detects
