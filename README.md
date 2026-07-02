@@ -157,6 +157,7 @@ In Bitbucket: **Repository settings** → **Repository variables**
 | `CLAUDE_MAX_TURNS` | Maximum Claude turns per review (default `30`). Increase for large diffs; decrease to cap spend. | No | No |
 | `CLAUDE_EFFORT` | Effort level for the review: `low`, `medium`, `high`, `xhigh`, or `max` (default: Claude CLI default) | No | No |
 | `CLAUDE_MODEL` | Model to use: alias (`haiku`, `sonnet`, `opus`) or full ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) (default: Claude CLI default) | No | No |
+| `REVIEW_WEBHOOK_URL` | If set, the full Claude JSON output (`review-raw.json`) is POSTed here after every review — useful for logging, analytics, or custom integrations | No | No |
 
 ---
 
@@ -212,6 +213,7 @@ GitLab project → **Settings** → **CI/CD** → **Variables**:
 | `CLAUDE_MAX_TURNS` | e.g. `30` | No | No |
 | `CLAUDE_EFFORT` | Effort level for the review: `low`, `medium`, `high`, `xhigh`, or `max` (default: Claude CLI default) | No | No |
 | `CLAUDE_MODEL` | Model to use: alias (`haiku`, `sonnet`, `opus`) or full ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) (default: Claude CLI default) | No | No |
+| `REVIEW_WEBHOOK_URL` | If set, the full Claude JSON output (`review-raw.json`) is POSTed here after every review — useful for logging, analytics, or custom integrations | No | No |
 
 > **`CI_JOB_TOKEN` is injected automatically** by GitLab CI into every job. It has
 > sufficient permissions to list open MRs and post MR comments on the same project.
@@ -494,6 +496,14 @@ or skill updates merged to `main`.
 | Force a specific skill regardless of platform | Set `SKILL_FILE` manually before the skill-selection block in `ci-review.sh` |
 | Add project-specific rules | Create `.claude/skills/<skill-name>.ext.md` in the project repo |
 | Change the output format | Edit the skill file's Step 4 section — **note constraints below** |
+| Forward review data to an external system | Set `REVIEW_WEBHOOK_URL` — the full Claude JSON is POSTed there after every review |
+
+> **Webhook payload:** the body is the raw Claude JSON (`review-raw.json`). It contains
+> `result` (the review text), `total_cost_usd`, `usage` (token counts), and `modelUsage`
+> (per-model token and cost breakdown). Claude internally uses a lightweight model for
+> orchestration alongside the configured review model; the Slack header shows the model
+> with the highest spend, which is the one that produced the review. Consumers of the
+> webhook can apply the same logic: `modelUsage | to_entries | max_by(.value.costUSD) | .key`.
 
 > **Output format constraints:** `ci-review.sh` runs Claude with `--output-format json`
 > and extracts the review text from the `.result` field. `parse-review.sh` detects
