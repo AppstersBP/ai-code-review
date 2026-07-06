@@ -24,6 +24,7 @@ on pull requests. Fails the build on Critical findings.
 - [Local Testing](#local-testing)
   - [Single run — local-review.sh](#single-run--local-reviewsh)
   - [Benchmarking — bench.sh](#benchmarking--benchsh)
+  - [Scoped reviews — --paths](#scoped-reviews----paths)
 - [Build Failure Behaviour](#build-failure-behaviour)
 - [Review Output Format](#review-output-format)
 - [Versioning / Pinning](#versioning--pinning)
@@ -158,6 +159,7 @@ In Bitbucket: **Repository settings** → **Repository variables**
 | `CLAUDE_EFFORT` | Effort level for the review: `low`, `medium`, `high`, `xhigh`, or `max` (default: Claude CLI default) | No | No |
 | `CLAUDE_MODEL` | Model to use: alias (`haiku`, `sonnet`, `opus`) or full ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) (default: Claude CLI default) | No | No |
 | `REVIEW_WEBHOOK_URL` | If set, the full Claude JSON output (`review-raw.json`) is POSTed here after every review — useful for logging, analytics, or custom integrations | No | No |
+| `REVIEW_PATHSPEC` | Space-separated git pathspecs restricting what gets reviewed (e.g. `src :!src/generated`) — see [Scoped reviews](#scoped-reviews----paths) | No | No |
 
 ---
 
@@ -214,6 +216,7 @@ GitLab project → **Settings** → **CI/CD** → **Variables**:
 | `CLAUDE_EFFORT` | Effort level for the review: `low`, `medium`, `high`, `xhigh`, or `max` (default: Claude CLI default) | No | No |
 | `CLAUDE_MODEL` | Model to use: alias (`haiku`, `sonnet`, `opus`) or full ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) (default: Claude CLI default) | No | No |
 | `REVIEW_WEBHOOK_URL` | If set, the full Claude JSON output (`review-raw.json`) is POSTed here after every review — useful for logging, analytics, or custom integrations | No | No |
+| `REVIEW_PATHSPEC` | Space-separated git pathspecs restricting what gets reviewed (e.g. `src :!src/generated`) — see [Scoped reviews](#scoped-reviews----paths) | No | No |
 
 > **`CI_JOB_TOKEN` is injected automatically** by GitLab CI into every job. It has
 > sufficient permissions to list open MRs and post MR comments on the same project.
@@ -318,6 +321,7 @@ ANTHROPIC_API_KEY=sk-ant-... bash scripts/local-review.sh \
   --head    <head-sha> \
   [--model  haiku|sonnet|opus|<full-model-id>] \
   [--effort low|medium|high|xhigh|max] \
+  [--paths  "<git-pathspecs>"] \
   [--out    /path/to/output-dir]
 ```
 
@@ -328,6 +332,7 @@ ANTHROPIC_API_KEY=sk-ant-... bash scripts/local-review.sh \
 | `--head` | Head commit SHA — last commit to include (**required**) |
 | `--model` | Override the Claude model for this run |
 | `--effort` | Override the effort level for this run |
+| `--paths` | Restrict the review to matching git pathspecs — see [Scoped reviews](#scoped-reviews--paths) below |
 | `--out` | Directory to write output files (default: current directory) |
 
 Output files written to `--out`:
@@ -401,6 +406,43 @@ To override `CLAUDE_MAX_TURNS` for all combinations in a bench run:
 ```bash
 ANTHROPIC_API_KEY=... CLAUDE_MAX_TURNS=50 bash scripts/bench.sh ...
 ```
+
+### Scoped reviews — --paths
+
+Both scripts (and CI, via the `REVIEW_PATHSPEC` variable) can restrict the review to a
+subset of the changed files using git pathspec syntax. Files outside the scope are not
+reviewed, not counted, and produce no findings.
+
+```bash
+# Only the PHP plugins
+--paths "plugins/acme"
+
+# A theme, excluding build output and binary assets
+--paths "themes/mytheme :!themes/mytheme/assets/dist :!themes/mytheme/assets/images"
+
+# Everything except two directories
+--paths ". :!vendor :!node_modules"
+```
+
+Rules:
+
+- Pathspecs are **space-separated**; each whitespace-separated token becomes one pathspec.
+  Do not add inner quotes around individual tokens.
+- Exclusions use the git `:!pattern` syntax and combine with positive paths.
+- If no changed files match the scope, the review is skipped cleanly (exit 0).
+- `bench.sh` has no `--paths` flag — export `REVIEW_PATHSPEC` instead; it flows through
+  to every combination in the matrix:
+
+```bash
+REVIEW_PATHSPEC="plugins/acme" bash scripts/bench.sh ...
+```
+
+**Reviewing very large ranges (e.g. release-to-release):** a single review over tens of
+thousands of changed lines will be shallow regardless of model — attention dilutes and
+findings get dropped for space. Instead, split the range into coherent per-area chunks
+(backend plugins, frontend sources, templates, infrastructure) and run one scoped review
+per chunk. Each run then operates on a normal review-sized diff and produces its own
+artifact files.
 
 ---
 
@@ -497,6 +539,7 @@ or skill updates merged to `main`.
 | Add project-specific rules | Create `.claude/skills/<skill-name>.ext.md` in the project repo |
 | Change the output format | Edit the skill file's Step 4 section — **note constraints below** |
 | Forward review data to an external system | Set `REVIEW_WEBHOOK_URL` — the full Claude JSON is POSTed there after every review |
+| Exclude generated/vendored files from review | Set `REVIEW_PATHSPEC`, e.g. `. :!src/generated :!*.lock` |
 
 > **Model displayed in Slack:** Claude internally uses a lightweight model for orchestration
 > even when a heavier model is configured via `CLAUDE_MODEL`. The raw JSON therefore contains
