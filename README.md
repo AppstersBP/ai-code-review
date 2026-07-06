@@ -160,6 +160,7 @@ In Bitbucket: **Repository settings** → **Repository variables**
 | `CLAUDE_MODEL` | Model to use: alias (`haiku`, `sonnet`, `opus`) or full ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) (default: Claude CLI default) | No | No |
 | `REVIEW_WEBHOOK_URL` | If set, the full Claude JSON output (`review-raw.json`) is POSTed here after every review — useful for logging, analytics, or custom integrations | No | No |
 | `REVIEW_PATHSPEC` | Space-separated git pathspecs restricting what gets reviewed (e.g. `src :!src/generated`) — see [Scoped reviews](#scoped-reviews----paths) | No | No |
+| `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | How long (ms) Claude waits for background review subagents before terminating them (default `2400000` = 40 min, set by `ci-review.sh`). Raise if heavy reviews get cut off — see [Troubleshooting](#troubleshooting) | No | No |
 
 ---
 
@@ -217,6 +218,7 @@ GitLab project → **Settings** → **CI/CD** → **Variables**:
 | `CLAUDE_MODEL` | Model to use: alias (`haiku`, `sonnet`, `opus`) or full ID (e.g. `claude-opus-4-7`, `claude-sonnet-4-6`, `claude-haiku-4-5-20251001`) (default: Claude CLI default) | No | No |
 | `REVIEW_WEBHOOK_URL` | If set, the full Claude JSON output (`review-raw.json`) is POSTed here after every review — useful for logging, analytics, or custom integrations | No | No |
 | `REVIEW_PATHSPEC` | Space-separated git pathspecs restricting what gets reviewed (e.g. `src :!src/generated`) — see [Scoped reviews](#scoped-reviews----paths) | No | No |
+| `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | How long (ms) Claude waits for background review subagents before terminating them (default `2400000` = 40 min, set by `ci-review.sh`). Raise if heavy reviews get cut off — see [Troubleshooting](#troubleshooting) | No | No |
 
 > **`CI_JOB_TOKEN` is injected automatically** by GitLab CI into every job. It has
 > sufficient permissions to list open MRs and post MR comments on the same project.
@@ -364,7 +366,8 @@ ANTHROPIC_API_KEY=sk-ant-... bash scripts/bench.sh \
   --matrix    "haiku:low,haiku:high,sonnet:medium,sonnet:high,opus:max" \
   [--out                ./bench-results] \
   [--commentary-model   sonnet] \
-  [--commentary-effort  high]
+  [--commentary-effort  high] \
+  [--skip-existing]
 ```
 
 | Option | Description |
@@ -376,6 +379,7 @@ ANTHROPIC_API_KEY=sk-ant-... bash scripts/bench.sh \
 | `--out` | Root output directory (default: `./bench-results`) |
 | `--commentary-model` | Model used to generate the comparative commentary (default: `sonnet`) |
 | `--commentary-effort` | Effort level for the commentary (default: `high`) |
+| `--skip-existing` | Reuse combos that already produced a valid review; re-run only missing/failed ones (see below) |
 
 Output layout:
 
@@ -406,6 +410,25 @@ To override `CLAUDE_MAX_TURNS` for all combinations in a bench run:
 ```bash
 ANTHROPIC_API_KEY=... CLAUDE_MAX_TURNS=50 bash scripts/bench.sh ...
 ```
+
+**Re-running a single failed combination — `--skip-existing`:** if one combo out of a
+matrix fails (or you add a new combo later), re-run the *same* command with
+`--skip-existing` appended. A combo is considered done when its `review-output.txt`
+contains a `### Verdict` section — those are reused as-is (wall-clock time is recovered
+from `review-raw.json`); anything missing, empty, or truncated is re-run. The summary
+table and AI commentary are always regenerated across the full matrix, so you still get
+the complete combined report:
+
+```bash
+ANTHROPIC_API_KEY=... bash scripts/bench.sh \
+  --project ... --base ... --head ... \
+  --matrix "haiku:high,sonnet:high,opus:max" \
+  --skip-existing
+```
+
+A review that produced output but never reached the structured verdict (e.g. it was cut
+off by the background-task ceiling — see **Troubleshooting**) is counted as `FAILED` in
+the summary and re-run by `--skip-existing`, not silently reported as a zero-finding pass.
 
 ### Scoped reviews — --paths
 
@@ -540,6 +563,7 @@ or skill updates merged to `main`.
 | Change the output format | Edit the skill file's Step 4 section — **note constraints below** |
 | Forward review data to an external system | Set `REVIEW_WEBHOOK_URL` — the full Claude JSON is POSTed there after every review |
 | Exclude generated/vendored files from review | Set `REVIEW_PATHSPEC`, e.g. `. :!src/generated :!*.lock` |
+| Give background review subagents more time | Set `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` (default set by `ci-review.sh`: `2400000` = 40 min; `0` = wait indefinitely) |
 
 > **Model displayed in Slack:** Claude internally uses a lightweight model for orchestration
 > even when a heavier model is configured via `CLAUDE_MODEL`. The raw JSON therefore contains
@@ -596,6 +620,25 @@ the script never fails if the lookup is unavailable.
 Set the `CLAUDE_MAX_TURNS` repository variable to a higher value (default `30`). Complex
 codebases with many cross-module dependencies may need 40–50 turns for thorough context
 exploration.
+
+**Review exits 0 but contains no findings — just a sentence like "the review agents are
+running in the background"**
+At higher effort levels Claude dispatches parallel review subagents in the background.
+In headless mode Claude Code waits a limited time for background tasks after the main
+turn ends, then kills them and returns whatever interim text exists — with exit code 0,
+so the build goes green with no actual review. The telltale line in `review-stderr.txt`:
+
+```
+Background tasks still running after 600s; terminating. Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.
+```
+
+`ci-review.sh` raises this ceiling to 40 minutes (`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=2400000`)
+for all runs, local and CI. If a heavy review still hits it, set the variable higher in the
+pipeline environment — it is only a grace period for still-running background work, so
+raising it does not slow down runs that finish normally. Avoid `0` (infinite) in CI: a hung
+subagent would then burn pipeline minutes until the step timeout kills the job. In bench
+runs, an affected combo shows as `FAILED` in `summary.md` and can be re-run alone with
+`--skip-existing`.
 
 **Extension file not being applied**
 Confirm the file is named exactly `<skill-name>.ext.md` (e.g. `ci-code-review-mobile.ext.md`)

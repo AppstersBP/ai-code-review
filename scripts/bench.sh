@@ -11,7 +11,8 @@
 #     --matrix  "haiku:low,haiku:high,sonnet:high,opus:max" \
 #     [--out    ./bench-results]                        \
 #     [--commentary-model sonnet]                       \
-#     [--commentary-effort high]
+#     [--commentary-effort high]                        \
+#     [--skip-existing]
 #
 # Required env:
 #   ANTHROPIC_API_KEY
@@ -45,6 +46,9 @@ Options:
   --out               DIR   Output root directory (default: ./bench-results)
   --commentary-model  M     Model for AI commentary (default: sonnet)
   --commentary-effort E     Effort for AI commentary (default: high)
+  --skip-existing           Reuse combos that already have a valid review
+                            (review-output.txt with a "### Verdict" section);
+                            only missing/failed combos are re-run
 EOF
   exit 1
 }
@@ -56,6 +60,7 @@ MATRIX=""
 OUT_DIR="./bench-results"
 COMMENTARY_MODEL="${COMMENTARY_MODEL:-sonnet}"
 COMMENTARY_EFFORT="${COMMENTARY_EFFORT:-high}"
+SKIP_EXISTING=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -66,6 +71,7 @@ while [[ $# -gt 0 ]]; do
     --out)               OUT_DIR="$2";            shift 2 ;;
     --commentary-model)  COMMENTARY_MODEL="$2";   shift 2 ;;
     --commentary-effort) COMMENTARY_EFFORT="$2";  shift 2 ;;
+    --skip-existing)     SKIP_EXISTING=1;         shift 1 ;;
     *) echo "Unknown option: $1" >&2; usage ;;
   esac
 done
@@ -104,22 +110,30 @@ for combo in "${COMBOS[@]}"; do
 
   echo "--- ${label} ---"
 
-  start_ts=$(date +%s)
-  bash "$LOCAL_REVIEW" \
-    --project "$PROJECT" \
-    --base    "$BASE_SHA" \
-    --head    "$HEAD_SHA" \
-    --model   "$c_model" \
-    --effort  "$c_effort" \
-    --out     "$combo_dir" || true
-  end_ts=$(date +%s)
-
-  DURATIONS[$label]=$((end_ts - start_ts))
-
   review_file="${combo_dir}/review-output.txt"
   raw_file="${combo_dir}/review-raw.json"
 
-  if [[ -s "$review_file" ]]; then
+  if [[ "$SKIP_EXISTING" -eq 1 ]] && grep -q '^### Verdict' "$review_file" 2>/dev/null; then
+    echo "  (valid review already present — skipping run)"
+    # Recover wall time from the raw JSON since we didn't time this run
+    DURATIONS[$label]=$(jq -r '((.duration_ms // 0) / 1000) | round' "$raw_file" 2>/dev/null || echo 0)
+  else
+    start_ts=$(date +%s)
+    bash "$LOCAL_REVIEW" \
+      --project "$PROJECT" \
+      --base    "$BASE_SHA" \
+      --head    "$HEAD_SHA" \
+      --model   "$c_model" \
+      --effort  "$c_effort" \
+      --out     "$combo_dir" || true
+    end_ts=$(date +%s)
+
+    DURATIONS[$label]=$((end_ts - start_ts))
+  fi
+
+  # A review is only valid if it reached the structured output (has a Verdict
+  # section) — a non-empty file can still be a truncated/interim message.
+  if grep -q '^### Verdict' "$review_file" 2>/dev/null; then
     FAILED[$label]=0
 
     # Verdict: first non-blank line after the ### Verdict heading

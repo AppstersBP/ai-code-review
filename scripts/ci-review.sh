@@ -363,6 +363,10 @@ cat > "$RUNNER" << 'RUNNER_EOF'
 #!/bin/bash
 set -a; source "$1"; set +a
 [ -d "/home/reviewer" ] && export HOME=/home/reviewer
+# Headless mode kills background subagents after 600s and returns interim
+# text with exit 0 (a false green). High-effort reviews dispatch background
+# review agents, so raise the ceiling. Override from the environment if needed.
+export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS:-2400000}"
 git config --global --add safe.directory "$2" 2>/dev/null || true
 EFFORT_ARGS=(); [ -n "$5" ] && EFFORT_ARGS=(--effort "$5")
 MODEL_ARGS=();  [ -n "$6" ] && MODEL_ARGS=(--model  "$6")
