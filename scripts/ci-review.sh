@@ -316,6 +316,16 @@ $(if [ "$IS_PR" = true ]; then
   echo "- This is Pull Request #${PR_ID}: ${PR_DESTINATION} ← ${CI_BRANCH}"
   echo "- PR Title: ${PR_TITLE:-}"
 fi)
+$(if [ -n "${BASE_SHA_OVERRIDE:-}" ]; then
+  echo "- RANGE IS OPERATOR-SPECIFIED: the commit range above was explicitly chosen by"
+  echo "  a human operator, not computed by CI. It may intentionally span hundreds of"
+  echo "  commits, multiple authors, and a long time period (e.g. release-to-release)."
+  echo "  Do NOT treat an old or distant BASE_SHA as a pipeline misconfiguration, do"
+  echo "  NOT narrow the range to recent commits, and do NOT restrict the review to"
+  echo "  the primary author's work — every change in the range (within the review"
+  echo "  scope) is under review, regardless of author or age. The multi-author"
+  echo "  base-branch rules in the skill instructions do not apply to this run."
+fi)
 $(if [ -n "$REVIEW_PATHSPEC" ]; then
   echo "- REVIEW SCOPE RESTRICTION: only changes matching these git pathspecs are in scope:"
   echo "  ${REVIEW_PATHSPEC}"
