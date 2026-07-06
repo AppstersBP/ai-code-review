@@ -23,6 +23,11 @@
 #                           (e.g. claude-opus-4-7, claude-sonnet-4-6,
 #                           claude-haiku-4-5-20251001)
 #                           (default: Claude CLI default)
+#   REVIEW_PATHSPEC         Space-separated git pathspecs restricting the review
+#                           scope (e.g. "plugins/a38 :!plugins/a38/vendor").
+#                           No inner quoting — each whitespace-separated token
+#                           becomes one pathspec. Files outside the pathspec are
+#                           not reviewed. Default: everything.
 #
 # =============================================================================
 set -euo pipefail
@@ -73,6 +78,10 @@ MANUAL_DEFAULT_BRANCH="${DEFAULT_BRANCH:-}"
 # Optional: if set, the full review-raw.json is POSTed to this URL after the
 # review completes. The pipeline never fails due to webhook errors.
 REVIEW_WEBHOOK_URL="${REVIEW_WEBHOOK_URL:-}"
+
+# Optional: space-separated git pathspecs restricting the review scope.
+# Supports exclusions with the ':!pattern' syntax.
+REVIEW_PATHSPEC="${REVIEW_PATHSPEC:-}"
 
 # ─── 2. Install dependencies ──────────────────────────────────────────────────
 if ! command -v claude &>/dev/null; then
@@ -219,7 +228,20 @@ if [ "$BASE_SHA" = "$HEAD_SHA" ]; then
   exit 0
 fi
 
-CHANGED_FILES=$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}" | wc -l | tr -d ' ')
+if [ -n "$REVIEW_PATHSPEC" ]; then
+  # Intentional word splitting: each pathspec becomes a separate git argument.
+  read -ra PATHSPEC_ARGS <<< "$REVIEW_PATHSPEC"
+  CHANGED_FILES=$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}" -- "${PATHSPEC_ARGS[@]}" | wc -l | tr -d ' ')
+  log "Review scope restricted to: ${REVIEW_PATHSPEC}"
+  if [ "$CHANGED_FILES" -eq 0 ]; then
+    log "No changes match the review pathspec. Skipping review."
+    echo "✅ Nothing to review — no changes match the configured review scope." > review-output.txt
+    echo "0" > review-exit-code.txt
+    exit 0
+  fi
+else
+  CHANGED_FILES=$(git diff --name-only "${BASE_SHA}..${HEAD_SHA}" | wc -l | tr -d ' ')
+fi
 COMMIT_COUNT=$(git log --oneline "${BASE_SHA}..${HEAD_SHA}" | wc -l | tr -d ' ')
 log "Reviewing ${COMMIT_COUNT} commit(s) touching ${CHANGED_FILES} file(s)"
 log "Range: ${BASE_SHA:0:8}..${HEAD_SHA:0:8}"
@@ -293,6 +315,14 @@ CONTEXT:
 $(if [ "$IS_PR" = true ]; then
   echo "- This is Pull Request #${PR_ID}: ${PR_DESTINATION} ← ${CI_BRANCH}"
   echo "- PR Title: ${PR_TITLE:-}"
+fi)
+$(if [ -n "$REVIEW_PATHSPEC" ]; then
+  echo "- REVIEW SCOPE RESTRICTION: only changes matching these git pathspecs are in scope:"
+  echo "  ${REVIEW_PATHSPEC}"
+  echo "  Append '-- ${REVIEW_PATHSPEC}' to every git diff and git log command you run,"
+  echo "  so the diff you review contains only in-scope files. Do not review, count,"
+  echo "  or report findings on files outside this scope. The 'Files changed' number"
+  echo "  in your output must reflect only in-scope files."
 fi)
 
 ---

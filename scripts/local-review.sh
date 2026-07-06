@@ -37,6 +37,8 @@ Required:
 Options:
   --model   MODEL   Alias (haiku|sonnet|opus) or full model ID
   --effort  LEVEL   low|medium|high|xhigh|max
+  --paths   SPEC    Space-separated git pathspecs restricting the review scope
+                    (e.g. "plugins/a38 :!plugins/a38/vendor" — no inner quotes)
   --out     DIR     Directory to write output files (default: current directory)
 EOF
   exit 1
@@ -47,6 +49,7 @@ BASE_SHA=""
 HEAD_SHA=""
 MODEL=""
 EFFORT=""
+PATHS=""
 OUT_DIR=""
 
 while [[ $# -gt 0 ]]; do
@@ -56,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --head)    HEAD_SHA="$2"; shift 2 ;;
     --model)   MODEL="$2"; shift 2 ;;
     --effort)  EFFORT="$2"; shift 2 ;;
+    --paths)   PATHS="$2"; shift 2 ;;
     --out)     OUT_DIR="$2"; shift 2 ;;
     *) echo "Unknown option: $1" >&2; usage ;;
   esac
@@ -79,6 +83,7 @@ echo "[local-review] Project: ${REPO_NAME}"
 echo "[local-review] Range:   ${BASE_SHA:0:8}..${HEAD_SHA:0:8}"
 [[ -n "$MODEL" ]]  && echo "[local-review] Model:   ${MODEL}"
 [[ -n "$EFFORT" ]] && echo "[local-review] Effort:  ${EFFORT}"
+[[ -n "$PATHS" ]]  && echo "[local-review] Paths:   ${PATHS}"
 [[ -n "$OUT_DIR" ]] && echo "[local-review] Out:     ${OUT_DIR}"
 
 # Run ci-review.sh from inside the project directory.
@@ -102,6 +107,7 @@ echo "[local-review] Range:   ${BASE_SHA:0:8}..${HEAD_SHA:0:8}"
   export BITBUCKET_USERNAME="local@local"
   [[ -n "$MODEL" ]]  && export CLAUDE_MODEL="$MODEL"
   [[ -n "$EFFORT" ]] && export CLAUDE_EFFORT="$EFFORT"
+  [[ -n "$PATHS" ]]  && export REVIEW_PATHSPEC="$PATHS"
 
   bash "${SCRIPT_DIR}/ci-review.sh" || true
 
