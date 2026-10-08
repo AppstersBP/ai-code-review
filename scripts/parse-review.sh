@@ -33,3 +33,15 @@ has_important_findings() {
   echo "$review" | grep -q "### 🟡 Important" || return 1
   _review_section "$review" "### 🟡 Important" "### 🟢" | grep -qv "None\."
 }
+
+# Print the structured review from Claude's output, starting at the first
+# review heading defined by the skills (🔍 review, ✅ nothing to review,
+# ❌ review failed) and dropping any preamble before it.
+# Returns 1 and prints nothing if the output contains no review heading.
+extract_review() {
+  local output="$1" review
+  review=$(printf '%s\n' "$output" \
+    | awk '/^## (🔍|✅|❌) Code Review/{found=1} found{print}')
+  [ -n "$review" ] || return 1
+  printf '%s\n' "$review"
+}

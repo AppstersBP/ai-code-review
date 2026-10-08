@@ -390,8 +390,14 @@ export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${CLAUDE_CODE_PRINT_BG_WAIT_CEILING
 git config --global --add safe.directory "$2" 2>/dev/null || true
 EFFORT_ARGS=(); [ -n "$5" ] && EFFORT_ARGS=(--effort "$5")
 MODEL_ARGS=();  [ -n "$6" ] && MODEL_ARGS=(--model  "$6")
+# --tools limits Claude to exactly these tools: no subagents or background
+# tasks (whose late notifications can replace the review text and multiply
+# cost), and no write or network tools. --strict-mcp-config excludes any MCP
+# servers configured for the user. (--allowedTools would not restrict anything
+# here, because --dangerously-skip-permissions approves every tool.)
 claude -p "$(cat "$3")" \
-  --allowedTools 'Bash(git *)' 'Read' 'Grep' 'Glob' \
+  --tools Bash,Read,Grep,Glob \
+  --strict-mcp-config \
   --dangerously-skip-permissions \
   --max-turns "$4" \
   "${EFFORT_ARGS[@]}" \
@@ -454,12 +460,17 @@ else
     FAIL_REASON="Claude returned no review content"
   else
     # Strip any preamble text Claude may emit before the structured review heading.
-    REVIEW_TEXT=$(printf '%s' "$REVIEW_TEXT" | awk '/^## 🔍/{found=1} found{print}')
-    if [ -z "$REVIEW_TEXT" ]; then
-      warn "Could not find '## 🔍' heading in Claude output — using raw output"
-      REVIEW_TEXT=$(jq -r '.result // ""' review-raw.json)
+    # Output without a review heading is not a review (e.g. a closing remark
+    # returned in place of it), so it is reported as a failure, never posted.
+    if REVIEW_TEXT=$(extract_review "$REVIEW_TEXT"); then
+      echo "$REVIEW_TEXT" > review-output.txt
+    else
+      warn "Claude output contains no review heading — treating the review as failed"
+      _log_claude_debug
+      echo "❌ Code review failed to produce a structured review. Check CI logs." > review-output.txt
+      REVIEW_EXIT=1
+      FAIL_REASON="Claude output contained no structured review"
     fi
-    echo "$REVIEW_TEXT" > review-output.txt
   fi
 fi
 

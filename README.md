@@ -629,23 +629,19 @@ Set the `CLAUDE_MAX_TURNS` repository variable to a higher value (default `30`).
 codebases with many cross-module dependencies may need 40–50 turns for thorough context
 exploration.
 
-**Review exits 0 but contains no findings — just a sentence like "the review agents are
-running in the background"**
-At higher effort levels Claude dispatches parallel review subagents in the background.
-In headless mode Claude Code waits a limited time for background tasks after the main
-turn ends, then kills them and returns whatever interim text exists — with exit code 0,
-so the build goes green with no actual review. The telltale line in `review-stderr.txt`:
+**Review fails with "Claude output contained no structured review"**
+`ci-review.sh` only accepts output that contains one of the review headings defined by the
+skill (`## 🔍 Code Review`, `## ✅ Code Review`, `## ❌ Code Review Failed`). Anything else,
+such as a closing remark returned in place of the review, fails the review instead of being
+posted. Check `review-stderr.txt` and the logged `review-raw.json` for the cause, typically
+the turn limit (`CLAUDE_MAX_TURNS`).
 
-```
-Background tasks still running after 600s; terminating. Set CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=0 to wait indefinitely.
-```
-
-`ci-review.sh` raises this ceiling to 40 minutes (`CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS=2400000`)
-for all runs, local and CI. If a heavy review still hits it, set the variable higher in the
-pipeline environment — it is only a grace period for still-running background work, so
-raising it does not slow down runs that finish normally. Avoid `0` (infinite) in CI: a hung
-subagent would then burn pipeline minutes until the step timeout kills the job. In bench
-runs, an affected combo shows as `FAILED` in `summary.md` and can be re-run alone with
+Claude runs with `--tools Bash,Read,Grep,Glob --strict-mcp-config`: no subagents, background
+tasks, write or network tools, or MCP servers. Earlier versions allowed background review
+subagents, whose late completion notifications could replace the review text with an
+interim message and multiply the cost of a run. `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` is
+still set, but has no effect while background tools are unavailable. In bench runs, a
+failed combo shows as `FAILED` in `summary.md` and can be re-run alone with
 `--skip-existing`.
 
 **Extension file not being applied**

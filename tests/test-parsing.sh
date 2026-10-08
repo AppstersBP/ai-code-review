@@ -205,6 +205,41 @@ check "important findings present: detected"    true   has_important_findings "$
 check "both critical and important: detected"   true   has_important_findings "$REVIEW_WITH_BOTH"
 check "claude failure message: no important"    false  has_important_findings "$REVIEW_CLAUDE_FAILED"
 
+# ─── extract_review ───────────────────────────────────────────────────────────
+echo ""
+echo "extract_review"
+
+OUTPUT_WITH_PREAMBLE="I have finished the review.
+
+${REVIEW_APPROVED}"
+OUTPUT_NOTHING_TO_REVIEW='## ✅ Code Review — Nothing to review. No changes detected between abc and def.'
+OUTPUT_RANGE_FAILED='## ❌ Code Review Failed — Could not resolve commit range. BASE_SHA= HEAD_SHA=abc.'
+OUTPUT_LATE_NOTIFICATION="I've already posted the full synthesized review in my previous message. No further action needed."
+OUTPUT_OTHER_HEADING='## Summary
+Looks fine.'
+
+# Usage: check_extract DESC INPUT EXPECTED_STATUS EXPECTED_FIRST_LINE
+check_extract() {
+  local desc="$1" input="$2" expect_status="$3" expect_first="$4"
+  local out status=0
+  out=$(extract_review "$input") || status=$?
+  if [ "$status" -eq "$expect_status" ] && [ "$(echo "$out" | head -1)" = "$expect_first" ]; then
+    echo "  PASS  $desc"
+    ((PASS++)) || true
+  else
+    echo "  FAIL  $desc  (status: $status, first line: $(echo "$out" | head -1))"
+    ((FAIL++)) || true
+  fi
+}
+
+check_extract "standard review: kept as is"       "$REVIEW_APPROVED"            0 "## 🔍 Code Review — abc1234"
+check_extract "preamble before heading: stripped" "$OUTPUT_WITH_PREAMBLE"       0 "## 🔍 Code Review — abc1234"
+check_extract "nothing-to-review heading: kept"   "$OUTPUT_NOTHING_TO_REVIEW"   0 "$OUTPUT_NOTHING_TO_REVIEW"
+check_extract "range-failure heading: kept"       "$OUTPUT_RANGE_FAILED"        0 "$OUTPUT_RANGE_FAILED"
+check_extract "late notification text: rejected"  "$OUTPUT_LATE_NOTIFICATION"   1 ""
+check_extract "unrelated heading: rejected"       "$OUTPUT_OTHER_HEADING"       1 ""
+check_extract "empty output: rejected"            ""                            1 ""
+
 # ─── Results ──────────────────────────────────────────────────────────────────
 echo ""
 echo "${PASS} passed, ${FAIL} failed"
