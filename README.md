@@ -308,8 +308,16 @@ The two scripts below let you run reviews locally against any commit range in an
 using the same pipeline logic as CI. No Slack token is required — Slack is automatically
 skipped in local mode.
 
-**Prerequisites:** `ANTHROPIC_API_KEY` must be set in the environment. Claude CLI must be
-installed (`npm install -g @anthropic-ai/claude-code`) or available on `$PATH`.
+**Prerequisites:** Claude CLI must be installed (`npm install -g @anthropic-ai/claude-code`)
+or available on `$PATH`.
+
+**Authentication:** if `ANTHROPIC_API_KEY` is set, reviews are billed to the API. If it is
+not set, the CLI uses the logged-in Claude account (`claude login`, or
+`CLAUDE_CODE_OAUTH_TOKEN` from `claude setup-token`), and runs count against that plan's
+usage limits. The cost figures in `review-raw.json` and `summary.md` are then
+API-equivalent estimates, not the amount charged. Account authentication applies to local
+runs only; CI still requires `ANTHROPIC_API_KEY`. Note that a key exported in your shell
+profile takes precedence over the account login.
 
 ### Single run — local-review.sh
 

@@ -14,8 +14,10 @@
 #     [--commentary-effort high]                        \
 #     [--skip-existing]
 #
-# Required env:
-#   ANTHROPIC_API_KEY
+# Optional env:
+#   ANTHROPIC_API_KEY    if unset, Claude uses the logged-in Claude account
+#                        (`claude login` or CLAUDE_CODE_OAUTH_TOKEN); costs in
+#                        summary.md are then API-equivalent estimates
 #
 # Output layout:
 #   <out>/<repo>/<base>..<head>/
@@ -80,7 +82,6 @@ done
 [[ -n "$BASE_SHA" ]] || { echo "Error: --base is required" >&2;    usage; }
 [[ -n "$HEAD_SHA" ]] || { echo "Error: --head is required" >&2;    usage; }
 [[ -n "$MATRIX" ]]   || { echo "Error: --matrix is required" >&2;  usage; }
-: "${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY must be set}"
 
 PROJECT="$(cd "$PROJECT" && pwd)"
 REPO_NAME=$(basename "$PROJECT")
@@ -91,6 +92,12 @@ RUN_DIR="$(cd "$RUN_DIR" && pwd)"
 
 echo "=== bench: ${REPO_NAME} ${RANGE} ==="
 echo "Output: ${RUN_DIR}"
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  AUTH_MODE="API key"
+else
+  AUTH_MODE="Claude account (costs are API-equivalent estimates)"
+fi
+echo "Auth:   ${AUTH_MODE}"
 echo ""
 
 # ─── Parse matrix ─────────────────────────────────────────────────────────────
@@ -181,7 +188,8 @@ SUMMARY_FILE="${RUN_DIR}/summary.md"
   echo "# Bench: ${REPO_NAME}"
   echo ""
   echo "**Range:** \`${RANGE}\`  "
-  echo "**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')"
+  echo "**Date:** $(date -u '+%Y-%m-%d %H:%M UTC')  "
+  echo "**Auth:** ${AUTH_MODE}"
   echo ""
   echo "## Results"
   echo ""
@@ -254,7 +262,7 @@ COMMENTARY_JSON=$(claude -p "$COMMENTARY_PROMPT" \
   --output-format json \
   2>/dev/null || echo '{}')
 
-COMMENTARY=$(printf '%s' "$COMMENTARY_JSON" | jq -r '.result // "(Commentary generation failed — check ANTHROPIC_API_KEY)"' 2>/dev/null \
+COMMENTARY=$(printf '%s' "$COMMENTARY_JSON" | jq -r '.result // "(Commentary generation failed — check ANTHROPIC_API_KEY or Claude login)"' 2>/dev/null \
   || echo "(Commentary generation failed)")
 
 {

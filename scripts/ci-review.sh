@@ -62,7 +62,15 @@ source "${SCRIPT_DIR}/providers/${CI_PLATFORM}.sh"
 
 # ─── 1. Validate required environment ────────────────────────────────────────
 log "Checking required environment variables..."
-: "${ANTHROPIC_API_KEY:?Required variable ANTHROPIC_API_KEY is not set}"
+# Local runs (local-review.sh / bench.sh) set ALLOW_ACCOUNT_AUTH=1 so Claude
+# can fall back to the logged-in Claude account when no API key is provided.
+if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+  log "Auth: ANTHROPIC_API_KEY"
+elif [ "${ALLOW_ACCOUNT_AUTH:-}" = "1" ]; then
+  log "Auth: logged-in Claude account (no ANTHROPIC_API_KEY set)"
+else
+  : "${ANTHROPIC_API_KEY:?Required variable ANTHROPIC_API_KEY is not set}"
+fi
 if [ "${SKIP_SLACK:-}" != "1" ]; then
   : "${SLACK_BOT_TOKEN:?Required variable SLACK_BOT_TOKEN is not set}"
   : "${SLACK_CHANNEL_ID:?Required variable SLACK_CHANNEL_ID is not set}"
@@ -345,7 +353,9 @@ PROMPT_FILE=$(mktemp /tmp/prompt.XXXXXX)
 printf '%s' "$PROMPT" > "$PROMPT_FILE"
 
 APIKEY_FILE=$(mktemp /tmp/.apikey.XXXXXX)
-printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > "$APIKEY_FILE"
+# Left empty when no key is set, so Claude uses the logged-in account instead.
+: > "$APIKEY_FILE"
+[ -n "${ANTHROPIC_API_KEY:-}" ] && printf 'ANTHROPIC_API_KEY=%s\n' "$ANTHROPIC_API_KEY" > "$APIKEY_FILE"
 chmod 600 "$APIKEY_FILE"
 [ "$(id -u)" -eq 0 ] && chown reviewer "$APIKEY_FILE" "$PROMPT_FILE"
 

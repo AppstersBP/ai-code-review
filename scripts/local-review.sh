@@ -12,8 +12,9 @@
 #     [--effort low|medium|high|xhigh|max]  \
 #     [--out    /path/to/output-dir]
 #
-# Required env:
-#   ANTHROPIC_API_KEY
+# Optional env:
+#   ANTHROPIC_API_KEY    if unset, Claude uses the logged-in Claude account
+#                        (`claude login` or CLAUDE_CODE_OAUTH_TOKEN)
 #
 # Output files written to --out (or current directory if omitted):
 #   review-output.txt    human-readable review
@@ -68,7 +69,6 @@ done
 [[ -n "$PROJECT" ]] || { echo "Error: --project is required" >&2; usage; }
 [[ -n "$BASE_SHA" ]] || { echo "Error: --base is required" >&2; usage; }
 [[ -n "$HEAD_SHA" ]] || { echo "Error: --head is required" >&2; usage; }
-: "${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY must be set}"
 
 PROJECT="$(cd "$PROJECT" && pwd)"
 if [[ -n "$OUT_DIR" ]]; then
@@ -85,10 +85,16 @@ echo "[local-review] Range:   ${BASE_SHA:0:8}..${HEAD_SHA:0:8}"
 [[ -n "$EFFORT" ]] && echo "[local-review] Effort:  ${EFFORT}"
 [[ -n "$PATHS" ]]  && echo "[local-review] Paths:   ${PATHS}"
 [[ -n "$OUT_DIR" ]] && echo "[local-review] Out:     ${OUT_DIR}"
+if [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+  echo "[local-review] Auth:    ANTHROPIC_API_KEY"
+else
+  echo "[local-review] Auth:    logged-in Claude account"
+fi
 
 # Run ci-review.sh from inside the project directory.
 #
 # SKIP_SLACK=1            — skips Slack posting and relaxes Slack var requirements.
+# ALLOW_ACCOUNT_AUTH=1    — lets ci-review.sh run without ANTHROPIC_API_KEY.
 # BASE_SHA_OVERRIDE/
 #   HEAD_SHA_OVERRIDE     — bypass fetch-based range detection in ci-review.sh.
 # Fake Bitbucket vars     — satisfy provider_validate_env (BITBUCKET_TOKEN/USERNAME)
@@ -98,6 +104,7 @@ echo "[local-review] Range:   ${BASE_SHA:0:8}..${HEAD_SHA:0:8}"
   cd "$PROJECT"
 
   export SKIP_SLACK=1
+  export ALLOW_ACCOUNT_AUTH=1
   export BASE_SHA_OVERRIDE="$BASE_SHA"
   export HEAD_SHA_OVERRIDE="$HEAD_SHA"
   export BITBUCKET_BUILD_NUMBER="local-$$"
